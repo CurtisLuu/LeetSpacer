@@ -75,19 +75,24 @@ across 41 pages of 100. A developer build step, not runtime behaviour. `acRate` 
 as a percentage and is stored as 0..1. 780 of 4,028 problems are Premium-only. 175
 distinct topic tags. No auth header or CSRF token was needed for this query.
 
-### Still unverified against a live signed-in account
+### Verified against a live signed-in account
 
-The shapes above are implemented from LeetCode's documented and long-stable endpoints, but
-have **not** been replayed against a real session in this repo. What to confirm, and what
-happens if each is wrong:
+The history sync was confirmed working on a real account on 2026-08-17. That single
+observation settles most of the table below, because a sync that produces dated events at
+all can only have done so by way of items 1, 2 and 4.
+
+| # | Check | Status |
+|---|---|---|
+| 1 | `/api/submissions/` still returns `submissions_dump` with `title_slug` and `timestamp` | **Confirmed** — dated events were produced. |
+| 2 | `lastkey` still cursors correctly and `has_next` terminates | **Confirmed** for the account tested. `phase: "submissions-truncated"` is reported if the 400-page cap ever trips. |
+| 4 | Whether user-scoped queries require `x-csrftoken` from the `csrftoken` cookie | **Confirmed sufficient** — `createLeetcodeTransport` sends it when present and the requests were accepted. |
+
+Two paths the history sync does not exercise, so they remain unconfirmed:
 
 | # | Check | If it's wrong |
 |---|---|---|
-| 1 | `/api/submissions/` still returns `submissions_dump` with `title_slug` and `timestamp` | No dated events; sync falls through to `recentAcSubmissionList`, then to the dateless accepted set. Degraded, not broken. |
-| 2 | `lastkey` still cursors correctly and `has_next` terminates | Either a short read (missing history) or the 400-page cap trips. `phase: "submissions-truncated"` is reported when the cap is hit. |
-| 3 | `problemsetQuestionList` still accepts `filters: {status: "AC"}` and returns per-row `status` | Backfill yields nothing; caught and reported, sync still completes. |
-| 4 | Whether user-scoped queries require `x-csrftoken` from the `csrftoken` cookie | `createLeetcodeTransport` already sends it when present. If LeetCode starts requiring more, the transport throws and the error surfaces on the provider card. |
-| 5 | The judge poll still uses `state`/`status_msg` | No live verdicts; the next history sync picks the submission up anyway. |
+| 3 | `problemsetQuestionList` still accepts `filters: {status: "AC"}` and returns per-row `status` | Backfill yields nothing, so problems older than the history reach never get a card. Deliberately non-fatal: it's caught, reported as `phase: "solved-set-unavailable"`, and the sync still completes. Look for that phase in the console to tell. |
+| 5 | The judge poll still uses `state`/`status_msg` | No live verdict when you submit with the panel open. Costs nothing permanent — the next history sync picks the submission up anyway. Confirm by submitting a problem and watching for `[lcs] <slug>: accepted`. |
 
 Every one of these degrades rather than corrupts, which is the property the parsers were
 written for: an unrecognized shape yields nothing instead of a wrong guess.

@@ -8,25 +8,21 @@ your developer account.
 
 ## Before you submit
 
-**Verify it in a real browser first.** The LeetCode adapter has never been run against a
-live signed-in account. Its endpoints are long-stable and every parser degrades to
-"nothing" rather than a wrong guess, but "degrades safely" is not "works". Submitting an
-unverified sync to review is how you get a one-star first impression.
+The LeetCode history sync was confirmed working against a live signed-in account on
+2026-08-17, which was the one thing that had to be checked by hand. Two narrower paths
+still haven't been exercised — see the table in [`providers.md`](providers.md). Neither
+blocks a release: each degrades to "that feature is quiet" rather than to broken data.
 
-Minimum manual pass:
+- **The accepted-set backfill** (`phase: "solved-set-unavailable"` in the console if it
+  fails). Without it, problems older than your submission history's reach never get a card.
+- **The live verdict relay.** Submit a problem with the side panel open and watch for
+  `[lcs] <slug>: accepted`. Without it, the verdict just arrives on the next sync instead.
 
-1. `pnpm build`, then load `apps/extension/.output/chrome-mv3` unpacked.
-2. Open `leetcode.com` signed in. Console should log
-   `[lcs] leetcode <mode> sync: N new events` with N > 0.
-3. Open the side panel. The LeetCode track should have cards with **real** solve dates —
-   spot-check one against your actual submission history.
-4. Switch to the NeetCode track. Your existing schedule should be intact (the v1→v2
-   database migration moved it, it did not rebuild it).
-5. Open Settings. Confirm both sources show *Sync this source* ticked.
-6. Submit a problem on LeetCode with the panel open; the verdict should be recorded
-   without a re-sync.
+Worth confirming, if you haven't already, that your existing NeetCode schedule survived the
+v1→v2 database migration intact — it should have been moved, not rebuilt.
 
-Then take the screenshots below, because you need real ones and only you have real data.
+The remaining blocker is screenshots, below. Those need a real install with real data, so
+only you can take them.
 
 ---
 
