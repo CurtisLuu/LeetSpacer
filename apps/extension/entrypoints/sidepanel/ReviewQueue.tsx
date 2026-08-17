@@ -50,6 +50,7 @@ export function ReviewQueue({ track }: { track: TrackId }) {
    */
   const requested = useRef<number | null>(null);
   const [doneThisSession, setDoneThisSession] = useState(0);
+  const [reviewedToday, setReviewedToday] = useState(0);
 
   const load = useCallback(
     async (adopt: boolean, limit?: number) => {
@@ -63,6 +64,7 @@ export function ReviewQueue({ track }: { track: TrackId }) {
         setScheduledAhead(result.scheduledAhead);
         setDailyLimit(result.limit);
         setNextDueAt(result.nextDueAt);
+        setReviewedToday(result.reviewedToday);
         setError(null);
 
         // Only an explicit load takes new slugs into the batch. A poll refreshes what's
@@ -153,6 +155,23 @@ export function ReviewQueue({ track }: { track: TrackId }) {
     .filter(Boolean)
     .join(" ");
 
+  /**
+   * The day's work, not the panel session's.
+   *
+   * Counted from the review log, so closing the side panel doesn't reset it — the old
+   * in-memory counter went back to zero every time, which made the bar useless for
+   * exactly the question it was there to answer.
+   */
+  const dayBar = (
+    <Meter
+      value={reviewedToday}
+      max={Math.max(dailyLimit || 1, reviewedToday)}
+      label="Reviewed today"
+      tone="accent"
+      size="sm"
+    />
+  );
+
   const more =
     remaining > 0 ? (
       <Button variant="secondary" size="sm" onClick={() => void loadMore()}>
@@ -177,6 +196,7 @@ export function ReviewQueue({ track }: { track: TrackId }) {
 
     return (
       <Section title="Today" description={note || undefined}>
+        {reviewedToday > 0 ? dayBar : null}
         <Empty
           title={
             doneThisSession > 0 ? "Batch done" : nothingTracked ? "Nothing here yet" : "Nothing due"
@@ -184,8 +204,8 @@ export function ReviewQueue({ track }: { track: TrackId }) {
           body={
             doneThisSession > 0
               ? remaining > 0
-                ? `${doneThisSession} reviewed. Take another batch whenever you want one.`
-                : `${doneThisSession} reviewed. The next batch comes due on its own.`
+                ? "Take another batch whenever you want one."
+                : "The next batch comes due on its own."
               : nothingTracked
                 ? track === "leetcode"
                   ? "Open leetcode.com while signed in and your submission history syncs automatically."
@@ -221,15 +241,7 @@ export function ReviewQueue({ track }: { track: TrackId }) {
         </Tooltip>
       }
     >
-      {doneThisSession > 0 ? (
-        <Meter
-          value={doneThisSession}
-          max={doneThisSession + items.length}
-          label="Reviewed"
-          tone="good"
-          size="sm"
-        />
-      ) : null}
+      {dayBar}
 
       <ul className="space-y-2">
         {items.map((item) => {

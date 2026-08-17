@@ -164,10 +164,16 @@ export default defineBackground(() => {
     "reviews:due": async ({ track, limit }) => {
       const store = await getStore();
       const now = Date.now();
-      const [settings, allDue, allCards] = await Promise.all([
+      // Local midnight, not a rolling 24 hours: "today" has to mean the same thing to
+      // the panel as it does to the person reading it.
+      const midnight = new Date();
+      midnight.setHours(0, 0, 0, 0);
+
+      const [settings, allDue, allCards, todaysLogs] = await Promise.all([
         store.settings.get(),
         store.cards.due(track, now),
         store.cards.all(track),
+        store.logs.since(midnight.getTime()),
       ]);
 
       // Everything seeded but not yet due. Mostly the dateless backfill, which the
@@ -217,6 +223,7 @@ export default defineBackground(() => {
         track,
         scheduledAhead: waiting.length,
         nextDueAt,
+        reviewedToday: todaysLogs.filter((log) => log.track === track).length,
       };
     },
 

@@ -116,6 +116,13 @@ export interface MessageMap {
       scheduledAhead: number;
       /** When the next not-yet-due card comes up, or null if none are waiting. */
       nextDueAt: number | null;
+      /**
+       * Reviews graded in this track since local midnight.
+       *
+       * Read from the log rather than counted in the panel, so it survives the panel
+       * being closed — which it is, most of the time.
+       */
+      reviewedToday: number;
     };
   };
   "reviews:grade": {
