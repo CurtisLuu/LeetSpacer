@@ -1,5 +1,5 @@
 import type { ReviewRating, TrackId } from "@lcs/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   Badge,
@@ -21,7 +21,17 @@ import { type ReviewItem, send } from "../../lib/messaging";
 import { openWelcome } from "../../lib/welcome";
 
 export function ReviewQueue({ track }: { track: TrackId }) {
-  const [items, setItems] = useState<ReviewItem[]>([]);
+  /** Everything the background last returned, batch member or not. */
+  const [fetched, setFetched] = useState<ReviewItem[]>([]);
+  /**
+   * The slugs that make up this session's batch.
+   *
+   * Held separately from the fetch so the queue stops refilling itself. Previously the
+   * poll overwrote the list with the server's top N, so grading one pulled the next one
+   * in and the queue never got shorter — you could work for ten minutes and end up
+   * looking at the same number of rows you started with.
+   */
+  const [batch, setBatch] = useState<string[]>([]);
   const [totalDue, setTotalDue] = useState(0);
   const [scheduledAhead, setScheduledAhead] = useState(0);
   const [nextDueAt, setNextDueAt] = useState<number | null>(null);
@@ -29,39 +39,77 @@ export function ReviewQueue({ track }: { track: TrackId }) {
   const [grading, setGrading] = useState<string | null>(null);
   const [pendingRating, setPendingRating] = useState<ReviewRating | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [limit, setLimit] = useState(0);
+  /** The daily cap the background applied, which is also one batch's worth. */
+  const [dailyLimit, setDailyLimit] = useState(0);
+  /**
+   * How many to ask for. Grows only when you press the button.
+   *
+   * A ref, not state: the polling effect reads it, and if it were a dependency then every
+   * change would tear the effect down and re-run its adopting first load — quietly
+   * refilling the batch, which is the exact behaviour being removed.
+   */
+  const requested = useRef<number | null>(null);
   const [doneThisSession, setDoneThisSession] = useState(0);
 
-  const refresh = useCallback(async () => {
-    try {
-      const result = await send("reviews:due", { track });
-      setItems(result.items);
-      setTotalDue(result.totalDue);
-      setScheduledAhead(result.scheduledAhead);
-      setLimit(result.limit);
-      setNextDueAt(result.nextDueAt);
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [track]);
+  const load = useCallback(
+    async (adopt: boolean, limit?: number) => {
+      try {
+        const result = await send("reviews:due", {
+          track,
+          ...(limit === undefined ? {} : { limit }),
+        });
+        setFetched(result.items);
+        setTotalDue(result.totalDue);
+        setScheduledAhead(result.scheduledAhead);
+        setDailyLimit(result.limit);
+        setNextDueAt(result.nextDueAt);
+        setError(null);
+
+        // Only an explicit load takes new slugs into the batch. A poll refreshes what's
+        // already there and nothing more.
+        if (adopt) {
+          setBatch((current) => {
+            const seen = new Set(current);
+            return [...current, ...result.items.map((i) => i.slug).filter((s) => !seen.has(s))];
+          });
+        }
+        return result;
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return null;
+      }
+    },
+    [track],
+  );
 
   useEffect(() => {
-    void refresh();
+    let cancelled = false;
+    void load(true).then((result) => {
+      if (!cancelled && result) requested.current = result.limit;
+    });
 
     // Data can arrive from elsewhere — a sync on neetcode.io, or an import on the
-    // options page — and the panel stays open across all of it.
-    const timer = setInterval(() => void refresh(), 5_000);
+    // options page — so the panel keeps the rows it is showing up to date. It does not
+    // reach for new ones.
+    const poll = () => void load(false, requested.current ?? undefined);
+    const timer = setInterval(poll, 5_000);
     const onVisible = () => {
-      if (document.visibilityState === "visible") void refresh();
+      if (document.visibilityState === "visible") poll();
     };
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
+      cancelled = true;
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refresh]);
+  }, [load]);
+
+  const loadMore = useCallback(async () => {
+    const step = Math.max(1, dailyLimit);
+    requested.current = (requested.current ?? dailyLimit) + step;
+    await load(true, requested.current);
+  }, [load, dailyLimit]);
 
   const grade = useCallback(
     async (slug: string, rating: ReviewRating) => {
@@ -69,13 +117,14 @@ export function ReviewQueue({ track }: { track: TrackId }) {
       setPendingRating(rating);
       try {
         const { nextDue } = await send("reviews:grade", { track, slug, rating });
-        // Drop it locally first so the row leaves immediately, then resync.
-        setItems((current) => current.filter((item) => item.slug !== slug));
+        // Out of the batch for good. Rating something Again reschedules it minutes away,
+        // and having it reappear underneath you is the behaviour this batch exists to stop.
+        setBatch((current) => current.filter((s) => s !== slug));
         setTotalDue((current) => Math.max(0, current - 1));
         setDoneThisSession((current) => current + 1);
         setExpanded(null);
         setError(null);
-        await refresh();
+        await load(false, requested.current ?? undefined);
         return nextDue;
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -85,17 +134,31 @@ export function ReviewQueue({ track }: { track: TrackId }) {
         setPendingRating(null);
       }
     },
-    [refresh, track],
+    [load, track],
   );
 
-  // Says where the rest of the track went. Without it a queue of 3 out of 47 tracked
-  // problems reads as data loss rather than as pacing.
-  const ahead =
+  // The batch, in the order it was taken, dropping anything no longer due.
+  const bySlug = new Map(fetched.map((item) => [item.slug, item]));
+  const items = batch
+    .map((slug) => bySlug.get(slug))
+    .filter((item): item is ReviewItem => item !== undefined);
+
+  const remaining = Math.max(0, totalDue - items.length);
+  const note = [
+    remaining > 0 ? `${remaining} more due beyond this batch.` : null,
     scheduledAhead > 0
-      ? `${scheduledAhead} more scheduled${
-          nextDueAt === null ? "" : `, next ${formatDueDate(nextDueAt)}`
-        }.`
-      : undefined;
+      ? `${scheduledAhead} scheduled${nextDueAt === null ? "" : `, next ${formatDueDate(nextDueAt)}`}.`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const more =
+    remaining > 0 ? (
+      <Button variant="secondary" size="sm" onClick={() => void loadMore()}>
+        Load {Math.min(remaining, Math.max(1, dailyLimit))} more
+      </Button>
+    ) : undefined;
 
   if (error) {
     return (
@@ -113,28 +176,32 @@ export function ReviewQueue({ track }: { track: TrackId }) {
     const nothingTracked = totalDue === 0 && scheduledAhead === 0;
 
     return (
-      <Section title="Today" description={ahead}>
+      <Section title="Today" description={note || undefined}>
         <Empty
           title={
-            doneThisSession > 0 ? "Done for today" : nothingTracked ? "Nothing here yet" : "Nothing due"
+            doneThisSession > 0 ? "Batch done" : nothingTracked ? "Nothing here yet" : "Nothing due"
           }
           body={
             doneThisSession > 0
-              ? `${doneThisSession} reviewed. The next batch comes due on its own.`
+              ? remaining > 0
+                ? `${doneThisSession} reviewed. Take another batch whenever you want one.`
+                : `${doneThisSession} reviewed. The next batch comes due on its own.`
               : nothingTracked
                 ? track === "leetcode"
                   ? "Open leetcode.com while signed in and your submission history syncs automatically."
                   : "Open neetcode.io/practice while signed in and your completed problems sync automatically."
                 : totalDue === 0
                   ? "Everything in this track is scheduled ahead. Nothing to do today."
-                  : `You've hit today's review limit for the ${TRACK_LABELS[track]} track. Raise it in settings if you want more.`
+                  : `${totalDue} due in the ${TRACK_LABELS[track]} track.`
           }
           action={
             nothingTracked ? (
               <Button variant="secondary" size="sm" onClick={openWelcome}>
                 Getting started
               </Button>
-            ) : undefined
+            ) : (
+              more
+            )
           }
         />
       </Section>
@@ -144,15 +211,13 @@ export function ReviewQueue({ track }: { track: TrackId }) {
   return (
     <Section
       title="Today"
-      description={ahead}
+      description={note || undefined}
       badge={
         <Tooltip
-          label={`${totalDue} due in total, capped to ${limit} a day in settings`}
+          label={`${totalDue} due in total. A batch is ${dailyLimit}, set by the daily limit in settings.`}
           align="start"
         >
-          <Badge tone="accent">
-            {items.length} of {totalDue}
-          </Badge>
+          <Badge tone="accent">{items.length} left</Badge>
         </Tooltip>
       }
     >
