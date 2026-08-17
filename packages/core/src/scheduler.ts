@@ -147,3 +147,25 @@ export function createScheduler(options: SchedulerOptions = {}): Scheduler {
 
   return scheduler;
 }
+
+/**
+ * Push a card's due date out to a floor, if FSRS put it sooner.
+ *
+ * Applied after review rather than inside the scheduler because the floor depends on the
+ * problem's difficulty, which is catalogue data the scheduler has no business knowing.
+ *
+ * Only `due` moves. FSRS recomputes from the time that actually elapsed at the next
+ * review, so leaving its state alone is what keeps the two consistent — writing a
+ * `scheduledDays` we invented here would be lying to the algorithm about its own history.
+ */
+export function withMinimumLock(
+  card: ReviewCard,
+  minimumDays: number,
+  now: Timestamp,
+): ReviewCard {
+  if (!Number.isFinite(minimumDays) || minimumDays <= 0) return card;
+
+  const floor = now + minimumDays * 86_400_000;
+  return card.due >= floor ? card : { ...card, due: floor };
+}
+

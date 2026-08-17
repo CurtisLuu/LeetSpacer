@@ -1,4 +1,4 @@
-import type { ProviderId, TrackId } from "./model.js";
+import type { Difficulty, ProviderId, TrackId } from "./model.js";
 import type { SeedStrategy } from "./seeding.js";
 
 export interface ProviderSettings {
@@ -40,6 +40,18 @@ export interface TrackSettings {
   seedSpreadDays: number;
   /** Curated lists to prioritize when picking new problems. */
   preferredLists: string[];
+  /**
+   * The shortest a problem may be locked after a review, in days, by its difficulty.
+   *
+   * FSRS thinks in flashcards, where seeing a card again ten minutes later is useful. A
+   * coding problem is not a flashcard: re-solving one six minutes after the last attempt
+   * measures nothing except short-term memory of the answer you just wrote. This is the
+   * floor that keeps a learning-step interval from landing inside the same session.
+   *
+   * Only ever pushes a due date *out*. Everything above the floor is left to FSRS, so a
+   * mature card's interval is untouched.
+   */
+  minimumLockDays: Record<Difficulty, number>;
 }
 
 export interface Settings {
@@ -77,6 +89,7 @@ const NEETCODE_TRACK: TrackSettings = {
   seedStrategy: "spread",
   seedSpreadDays: 14,
   preferredLists: ["neetcode150"],
+  minimumLockDays: { Easy: 4, Medium: 2, Hard: 1 },
 };
 
 /**
@@ -92,6 +105,7 @@ const LEETCODE_TRACK: TrackSettings = {
   seedStrategy: "spread",
   seedSpreadDays: 30,
   preferredLists: [],
+  minimumLockDays: { Easy: 4, Medium: 2, Hard: 1 },
 };
 
 /**
@@ -168,7 +182,13 @@ function trackWithDefaults(
   // Precedence: what was stored for this track, then whatever the pre-split settings
   // said, then this track's defaults.
   const merged = { ...fallback, ...pickLegacy(legacy), ...stored };
-  return { ...merged, preferredLists: [...merged.preferredLists] };
+  return {
+    ...merged,
+    preferredLists: [...merged.preferredLists],
+    // Spread over the fallback rather than replacing it: a stored object missing a
+    // difficulty would otherwise leave that one undefined and the clamp reading NaN.
+    minimumLockDays: { ...fallback.minimumLockDays, ...merged.minimumLockDays },
+  };
 }
 
 /**

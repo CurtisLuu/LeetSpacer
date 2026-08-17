@@ -9,6 +9,7 @@ import {
   distributeDueDates,
   ingestEvents,
   seedMissingCards,
+  withMinimumLock,
 } from "@lcs/core";
 
 import { getCatalog, getProblemLinks } from "../lib/catalog.js";
@@ -266,16 +267,22 @@ export default defineBackground(() => {
       ]);
       if (!card) throw new Error(`No review card for "${slug}" in the ${track} track`);
 
-      const scheduler = createScheduler({
-        requestRetention: settings.tracks[track].requestRetention,
-      });
-      const { card: next, log } = scheduler.review(card, rating, Date.now());
+      const tuning = settings.tracks[track];
+      const scheduler = createScheduler({ requestRetention: tuning.requestRetention });
+      const now = Date.now();
+      const { card: next, log } = scheduler.review(card, rating, now);
 
-      await store.cards.put([next]);
+      // A problem the catalogue doesn't know sits in the middle rather than skipping the
+      // floor entirely — no difficulty is not the same as no opinion.
+      const catalog = await getCatalog().catch(() => null);
+      const difficulty = catalog?.bySlug(slug)?.difficulty ?? "Medium";
+      const locked = withMinimumLock(next, tuning.minimumLockDays[difficulty], now);
+
+      await store.cards.put([locked]);
       await store.logs.append([log]);
       await refreshBadge();
 
-      return { nextDue: next.due };
+      return { nextDue: locked.due };
     },
   });
 });
