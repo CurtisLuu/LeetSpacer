@@ -11,6 +11,7 @@ import {
   Button,
   Callout,
   InfoDot,
+  Logo,
   Section,
   TRACK_LABELS,
   Tooltip,
@@ -18,6 +19,7 @@ import {
 } from "../../components/ui";
 import { send } from "../../lib/messaging";
 import { getStore } from "../../lib/store";
+import { openWelcome } from "../../lib/welcome";
 
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -132,16 +134,19 @@ export function App() {
 
   return (
     <main className="mx-auto max-w-xl space-y-6 p-6 text-sm">
-      <header>
-        <h1 className="text-lg font-semibold">LeetSpacer</h1>
-        <p className="text-xs text-ink-muted">
-          All data is stored locally in this browser and is never sent anywhere.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex items-start gap-2.5">
+          <Logo className="mt-0.5 size-8" />
+          <h1 className="text-lg font-semibold">LeetSpacer</h1>
+        </div>
+        <Button variant="ghost" size="sm" onClick={openWelcome}>
+          Getting started
+        </Button>
       </header>
 
       <Section
         title="Your history"
-        description="Both sources read the session you're already signed in with. No button, no token, no account."
+        description="Both sites are supported. LeetCode reports when you solved each problem; NeetCode reports only that you did — so LeetCode reviews are dated and NeetCode's are spread."
       >
         <div className="space-y-3 rounded-lg border border-border bg-surface-raised p-3">
           <div className="space-y-1">
@@ -177,6 +182,16 @@ export function App() {
             Both identify problems by their LeetCode link, so the two merge into one
             history and titles, difficulty and topic tags come from the bundled catalogue.
           </p>
+
+          <Callout title="Why the two schedule differently">
+            <p>
+              <strong className="font-medium">LeetCode</strong> exposes a timestamp on every submission, so those cards are backfilled with your real solve dates — a problem you last passed in March is scheduled as a problem last seen in March.
+            </p>
+            <p className="mt-1">
+              <strong className="font-medium">NeetCode</strong> reports that a problem is complete but never when, so there is no history to backfill from. LeetSpacer generates its own schedule for those, spread from the day you sync. Change how that spread
+              works under Practice tracks below.
+            </p>
+          </Callout>
         </div>
       </Section>
 

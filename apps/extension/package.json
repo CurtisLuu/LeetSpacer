@@ -15,7 +15,6 @@
   "dependencies": {
     "@lcs/catalog": "workspace:*",
     "@lcs/core": "workspace:*",
-    "@lcs/importers": "workspace:*",
     "@lcs/providers": "workspace:*",
     "@lcs/store": "workspace:*",
     "idb": "^8.0.3",

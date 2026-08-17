@@ -14,21 +14,6 @@ export interface ProviderSettings {
 }
 
 /**
- * The GitHub repository NeetCode syncs your solutions to.
- *
- * No token here on purpose — a personal access token is a credential, and Settings gets
- * written into every export. The token lives in extension storage under its own key so
- * exporting your data can never leak it.
- */
-export interface GithubSourceSettings {
-  /** "owner/repo", or null when not connected. */
-  repo: string | null;
-  lastSyncAt: number | null;
-  /** Human-readable outcome of the last sync, success or failure. */
-  lastResult: string | null;
-}
-
-/**
  * Everything that shapes one track's schedule.
  *
  * Held per track rather than globally because the two tracks are working different
@@ -68,7 +53,6 @@ export interface Settings {
    */
   settingsVersion: number;
   providers: Record<ProviderId, ProviderSettings>;
-  github: GithubSourceSettings;
   /** One independent schedule per track. */
   tracks: Record<TrackId, TrackSettings>;
   /** Which track the UI is currently showing. Set by the selector in the side panel. */
@@ -124,7 +108,6 @@ export const DEFAULT_SETTINGS: Settings = {
     leetcode: { enabled: true, username: null, lastFullSyncAt: null, lastIncrementalSyncAt: null },
     neetcode: { enabled: true, username: null, lastFullSyncAt: null, lastIncrementalSyncAt: null },
   },
-  github: { repo: null, lastSyncAt: null, lastResult: null },
   tracks: { leetcode: LEETCODE_TRACK, neetcode: NEETCODE_TRACK },
   activeTrack: "neetcode",
   problemLinkTarget: "neetcode",
@@ -161,7 +144,7 @@ const LEGACY_KEYS = [
  * Just the pre-split schedule fields, and only the ones actually present.
  *
  * Picked key by key rather than spread wholesale: the stored object also holds
- * `providers`, `github`, `tracks` and friends, and spreading it into a track would graft
+ * `providers`, `tracks` and friends, and spreading it into a track would graft
  * every one of them onto every track — which then round-trips back into storage.
  */
 function pickLegacy(source: LegacyScheduleSettings): Partial<TrackSettings> {
@@ -184,10 +167,6 @@ function trackWithDefaults(
 }
 
 /**
- * Merge stored settings over defaults so added fields don't break existing installs.
- * Always returns a fresh object — nothing here aliases DEFAULT_SETTINGS.
- */
-/**
  * One-time corrections to values that have gone stale on disk.
  *
  * Runs before the merge, so a corrected value is treated as if it had been stored that
@@ -209,6 +188,10 @@ function migrateStored(stored: Partial<Settings>): Partial<Settings> {
   return { ...stored, providers, settingsVersion: SETTINGS_VERSION };
 }
 
+/**
+ * Merge stored settings over defaults so added fields don't break existing installs.
+ * Always returns a fresh object — nothing here aliases DEFAULT_SETTINGS.
+ */
 export function withDefaults(raw: Partial<Settings> | undefined): Settings {
   const stored = raw === undefined ? undefined : migrateStored(raw);
   const legacy = (stored ?? {}) as LegacyScheduleSettings;
@@ -222,7 +205,6 @@ export function withDefaults(raw: Partial<Settings> | undefined): Settings {
       leetcode: { ...DEFAULT_SETTINGS.providers.leetcode, ...stored?.providers?.leetcode },
       neetcode: { ...DEFAULT_SETTINGS.providers.neetcode, ...stored?.providers?.neetcode },
     },
-    github: { ...DEFAULT_SETTINGS.github, ...stored?.github },
     tracks: {
       leetcode: trackWithDefaults(LEETCODE_TRACK, stored?.tracks?.leetcode, legacy),
       neetcode: trackWithDefaults(NEETCODE_TRACK, stored?.tracks?.neetcode, legacy),

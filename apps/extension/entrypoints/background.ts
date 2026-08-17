@@ -58,6 +58,21 @@ export default defineBackground(() => {
     ?.setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error: unknown) => console.error("[lcs] side panel behavior", error));
 
+  // Open the walkthrough once, on install only.
+  //
+  // It earns the tab: LeetSpacer has nothing to show until history syncs, and history only
+  // syncs when you visit a site it reads — so an install with no instruction produces a
+  // panel that says "nothing here" and looks broken. Deliberately not on update, which
+  // would interrupt people who already know how it works.
+  //
+  // `tabs.create` needs no `tabs` permission; that one is only for reading tab contents.
+  browser.runtime.onInstalled.addListener((details) => {
+    if (details.reason !== "install") return;
+    void browser.tabs
+      .create({ url: browser.runtime.getURL("/welcome.html") })
+      .catch((error: unknown) => console.error("[lcs] welcome tab", error));
+  });
+
   browser.alarms.create(SYNC_ALARM, { periodInMinutes: SYNC_PERIOD_MINUTES });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== SYNC_ALARM) return;
@@ -148,11 +163,22 @@ export default defineBackground(() => {
 
     "reviews:due": async ({ track, limit }) => {
       const store = await getStore();
-      const settings = await store.settings.get();
-      const allDue = await store.cards.due(track, Date.now());
+      const now = Date.now();
+      const [settings, allDue, allCards] = await Promise.all([
+        store.settings.get(),
+        store.cards.due(track, now),
+        store.cards.all(track),
+      ]);
+
+      // Everything seeded but not yet due. Mostly the dateless backfill, which the
+      // seeding strategy deliberately fans across a window instead of dumping at once.
+      const waiting = allCards.filter((card) => card.due > now);
+      const nextDueAt = waiting.reduce<number | null>(
+        (soonest, card) => (soonest === null ? card.due : Math.min(soonest, card.due)),
+        null,
+      );
 
       const cap = limit ?? settings.tracks[track].dailyReviewLimit;
-      const now = Date.now();
       // Most overdue first — those are the ones closest to being forgotten.
       const selected = [...allDue].sort((a, b) => a.due - b.due).slice(0, cap);
       const states = await store.problems.getMany(selected.map((card) => card.slug));
@@ -184,7 +210,14 @@ export default defineBackground(() => {
         };
       });
 
-      return { items, totalDue: allDue.length, limit: cap, track };
+      return {
+        items,
+        totalDue: allDue.length,
+        limit: cap,
+        track,
+        scheduledAhead: waiting.length,
+        nextDueAt,
+      };
     },
 
     "data:changed": async () => {
@@ -325,10 +358,9 @@ async function getCatalogStats(): Promise<{ count: number; generatedAt: string |
 async function buildStatus(): Promise<SyncStatus> {
   const store = await getStore();
   const now = Date.now();
-  const [settings, problems, eventsRecorded, catalog] = await Promise.all([
+  const [settings, problems, catalog] = await Promise.all([
     store.settings.get(),
     store.problems.all(),
-    store.events.count(),
     getCatalogStats(),
   ]);
 
@@ -345,14 +377,19 @@ async function buildStatus(): Promise<SyncStatus> {
   // waiting in the track you're not looking at.
   const tracks = {} as SyncStatus["tracks"];
   for (const track of TRACK_IDS) {
-    const [cards, due] = await Promise.all([
+    const [cards, due, events] = await Promise.all([
       store.cards.all(track),
       store.cards.due(track, now),
+      // Scoped to the provider that feeds this track. A combined total sitting between
+      // two track-scoped numbers reads as a bug, because it looks like one of the three
+      // is counting something else — which it was.
+      store.events.count(track),
     ]);
     tracks[track] = {
       tracked: cards.length,
       solved: problems.filter((p) => p.status === "solved" && p.sources.includes(track)).length,
       due: due.length,
+      events,
     };
   }
 
@@ -363,7 +400,6 @@ async function buildStatus(): Promise<SyncStatus> {
     activeTrack: settings.activeTrack,
     problemsTracked: problems.length,
     solved: problems.filter((p) => p.status === "solved").length,
-    eventsRecorded,
     catalog,
   };
 }

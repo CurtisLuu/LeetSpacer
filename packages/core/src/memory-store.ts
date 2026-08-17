@@ -38,8 +38,11 @@ export function createMemoryStore(initial?: Partial<StoreSnapshot>): Store {
       async all() {
         return [...events.values()];
       },
-      async count() {
-        return events.size;
+      async count(provider) {
+        if (provider === undefined) return events.size;
+        let total = 0;
+        for (const ev of events.values()) if (ev.provider === provider) total += 1;
+        return total;
       },
       async remove(ids) {
         let removed = 0;

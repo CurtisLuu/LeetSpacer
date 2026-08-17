@@ -89,8 +89,8 @@ LeetSpacer reads your history from a script running on leetcode.com and neetcode
 the session you're already signed in with — it never handles a password or a token, and
 nothing is ever transmitted anywhere.
 
-Full policy: https://github.com/CurtisLuu/leetcode-spaced/blob/main/PRIVACY.md
-Source code: https://github.com/CurtisLuu/leetcode-spaced
+Full policy: https://github.com/CurtisLuu/LeetSpacer/blob/main/PRIVACY.md
+Source code: https://github.com/CurtisLuu/LeetSpacer
 ```
 
 ---
@@ -113,7 +113,6 @@ solved, using their own practice history from LeetCode and NeetCode.
 | `alarms` | Periodically recomputes how many reviews are due so the toolbar badge stays accurate without polling. |
 | Host: `leetcode.com` | A content script on leetcode.com reads the signed-in user's own submission history (problem slugs, timestamps, verdicts) to schedule reviews from real solve dates. Reading it from that origin is what lets the user's existing session apply without the extension ever handling a credential. |
 | Host: `neetcode.io` | A content script on neetcode.io reads the signed-in user's own set of completed problems, which the page has already fetched and cached in localStorage. The extension issues no request of its own here. |
-| Host: `api.github.com` (optional) | Requested only if the user explicitly connects a NeetCode GitHub Sync repository, to read commit dates as a source of real solve dates. Never requested at install. |
 | Remote code | Not used. All code is bundled in the package; nothing is fetched or evaluated at runtime. |
 
 **Data usage disclosures** — the dashboard requires you to tick what you collect. The
@@ -141,7 +140,7 @@ purpose, no use for creditworthiness or lending.
 **Privacy policy URL**
 
 ```
-https://github.com/CurtisLuu/leetcode-spaced/blob/main/PRIVACY.md
+https://github.com/CurtisLuu/LeetSpacer/blob/main/PRIVACY.md
 ```
 
 ---
@@ -180,6 +179,11 @@ there is nothing to keep in sync.
 
 Icons regenerate with `pnpm --filter @lcs/extension icons` if the mark ever changes. They
 are committed, so a normal build needs no Python.
+
+Note that 48 and 128 render the mark faithfully — pale face, purple deck behind — while 16
+and 32 invert to a filled accent card with light braces. The pale face is invisible against
+a white browser toolbar, and by 16px the braces are thinner than a pixel. The store listing
+uses the 128, so what a reviewer sees is the real artwork.
 
 ---
 

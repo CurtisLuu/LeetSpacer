@@ -1,6 +1,7 @@
 import {
   Button,
   Callout,
+  Logo,
   ProviderCard,
   Section,
   Stat,
@@ -21,9 +22,9 @@ export function App() {
   return (
     <div className="flex min-h-screen flex-col gap-4 p-4 text-sm">
       <header className="space-y-3">
-        <div>
-          <h1 className="text-base font-semibold">LeetSpacer</h1>
-          <p className="text-xs text-ink-muted">Everything stays on this device.</p>
+        <div className="flex items-center gap-2">
+          <Logo className="size-7" />
+          <h1 className="min-w-0 truncate text-base font-semibold">LeetSpacer</h1>
         </div>
 
         <TrackSwitcher
@@ -65,8 +66,18 @@ export function App() {
           >
             <Stat label="Solved" value={stats?.solved ?? "—"} tone="good" className="w-full" />
           </Tooltip>
-          <Tooltip label="Submissions recorded in the append-only log, across both tracks" align="end">
-            <Stat label="Events" value={status?.eventsRecorded ?? "—"} tone="info" className="w-full" />
+          <Tooltip
+            // Spells out the relationship rather than describing the field, because the
+            // number is always higher than Solved and that looks wrong until you know a
+            // problem contributes one event per attempt.
+            label={
+              track === "leetcode"
+                ? `${stats?.events ?? 0} submissions across ${stats?.solved ?? 0} solved problems — every attempt counts, including the ones that failed.`
+                : `${stats?.events ?? 0} completions, one per problem NeetCode reports done. It has nothing finer to report.`
+            }
+            align="end"
+          >
+            <Stat label="Events" value={stats?.events ?? "—"} tone="info" className="w-full" />
           </Tooltip>
         </div>
       </Section>

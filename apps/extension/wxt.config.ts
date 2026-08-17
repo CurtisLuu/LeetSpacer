@@ -31,14 +31,11 @@ export default defineConfig({
       128: "/icons/128.png",
     },
 
-    homepage_url: "https://github.com/CurtisLuu/leetcode-spaced",
+    homepage_url: "https://github.com/CurtisLuu/LeetSpacer",
 
     // Deliberately small. `storage` for local state, `sidePanel` for the main UI,
     // `alarms` to schedule background syncs. No `tabs`, no `<all_urls>`, no remote code.
     permissions: ["storage", "sidePanel", "alarms"],
-
-    // Requested from the options page when you connect a repository, not at install.
-    optional_host_permissions: ["https://api.github.com/*"],
 
     // Both sites are read from a content script on their own origin, using the session
     // you're already signed in with. Content scripts are declared statically, so these

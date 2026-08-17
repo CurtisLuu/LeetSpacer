@@ -1,4 +1,4 @@
-import { Badge, Button, Stat, TRACK_LABELS, Tooltip, TrackSwitcher } from "../../components/ui";
+import { Badge, Button, Logo, Stat, TRACK_LABELS, Tooltip, TrackSwitcher } from "../../components/ui";
 import { useStatus } from "../../lib/use-status";
 import { useTrack } from "../../lib/use-track";
 
@@ -15,7 +15,10 @@ export function App() {
   return (
     <div className="w-64 space-y-3 p-3 text-sm">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold">LeetSpacer</span>
+        <span className="flex min-w-0 items-center gap-1.5 font-semibold">
+          <Logo className="size-5" />
+          LeetSpacer
+        </span>
         <Tooltip
           label={
             connected

@@ -80,6 +80,11 @@ async function syncIfClaimed(
   };
 
   let inserted = 0;
+  // Distinct problems, not just events. A submission history has several submissions per
+  // problem, so an event count on its own reads as far more progress than it is — and
+  // then disagrees with every problem count in the UI.
+  const touched = new Set<string>();
+
   try {
     const stream =
       mode === "full"
@@ -92,10 +97,13 @@ async function syncIfClaimed(
       if (signal.aborted) break;
       const result = await send("events:ingest", { provider: "leetcode", events });
       inserted += result.inserted;
+      for (const slug of result.updatedProblems) touched.add(slug);
     }
 
     await send("sync:completed", { provider: "leetcode", mode });
-    console.debug(`[lcs] leetcode ${mode} sync: ${inserted} new events`);
+    console.debug(
+      `[lcs] leetcode ${mode} sync: ${inserted} new events across ${touched.size} problems`,
+    );
   } catch (cause) {
     const error = cause instanceof Error ? cause.message : String(cause);
     // Reported rather than swallowed — a sync that silently stops looks identical to an

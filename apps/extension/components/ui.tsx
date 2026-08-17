@@ -11,6 +11,7 @@ export * from "./callout";
 export * from "./cx";
 export * from "./field";
 export * from "./grade-button";
+export * from "./logo";
 export * from "./meter";
 export * from "./tooltip";
 export * from "./track-switcher";

@@ -44,11 +44,6 @@ LeetCode work because they run on leetcode.com and your browser attaches your ex
 cookie automatically — the same way a normal page load does. LeetCode's session cookie is
 marked `HttpOnly`, so it is not readable by extension code even in principle.
 
-If you connect a GitHub repository (an optional feature for importing solve dates from a
-NeetCode GitHub Sync repo), the personal access token you provide is stored in extension
-storage under its own key and is used only to call `api.github.com` on your behalf. It is
-deliberately kept out of the settings object so that exporting your data cannot leak it.
-
 ## Your control over it
 
 - **Export** — Settings → Export JSON writes your entire local dataset to a file.
@@ -66,7 +61,6 @@ deliberately kept out of the settings object so that exporting your data cannot 
 | `alarms` | Wakes the extension periodically to refresh the due-count badge. |
 | Access to `leetcode.com` | Read your submission history from a script on that origin. |
 | Access to `neetcode.io` | Read your completed-problem set from that page's own cache. |
-| `api.github.com` (optional) | Only requested if you connect a GitHub Sync repository. |
 
 LeetSpacer requests no `tabs` permission, no `<all_urls>`, and executes no remotely hosted
 code.
@@ -83,4 +77,4 @@ date above will change. The file's full history is public in the repository.
 ## Contact
 
 Questions or concerns: open an issue at
-<https://github.com/CurtisLuu/leetcode-spaced/issues>.
+<https://github.com/CurtisLuu/LeetSpacer/issues>.
