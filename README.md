@@ -10,7 +10,8 @@ Everything stays on your device. There is no backend and no account.
 
 Both sources read the session you are already signed in with, from a content script on
 that site's own origin. Nothing is configured, no token is entered, and nothing leaves
-your machine.
+your machine. There is no manual sync button because there is no manual sync — the reading
+happens inside a tab on the site, so opening one *is* the sync.
 
 **LeetCode.** Open any page on `leetcode.com` while signed in. The extension walks your
 submission history from `/api/submissions/` — the endpoint the site's own submissions page
@@ -23,18 +24,26 @@ verdict the moment the judge returns it.
 The first sync walks the whole history and takes a few minutes; after that it's a single
 request, and at most one every fifteen minutes.
 
-**NeetCode.** Open [neetcode.io/practice](https://neetcode.io/practice) while signed in
-and your completed problems sync automatically. This one issues no requests at all: the
-page fetches your completed set on load and caches it in `localStorage`, and the extension
-reads what's already there.
+**NeetCode.** Open [neetcode.io/practice](https://neetcode.io/practice) while signed in.
+Two things are read. The completed-problem set comes free — the page fetches it on load and
+caches it in `localStorage`, so the extension reads what is already there. On top of that,
+the extension walks NeetCode's own activity history, one request per day you were active,
+which carries **per-submission timestamps and verdicts** exactly as LeetCode's does.
 
-Crucially, NeetCode identifies problems by **LeetCode URL**, so both sources key by
-LeetCode slug, merge into one history, and join straight to the bundled catalogue for real
-titles, difficulty, and topic tags. See [`docs/providers.md`](docs/providers.md) for the
-exact shapes.
+That walk needs a bearer token, because NeetCode authenticates with one rather than a
+cookie. It is not read out of storage — the copy Firebase keeps there expires hourly and is
+usually stale. Instead the token is taken from a request neetcode.io has already made
+itself, held in memory for the life of the tab, used only for calls back to neetcode.io,
+and never stored or transmitted. This is the one place the extension handles a credential
+at all; if you would rather it did not, turn NeetCode off under Settings → Your history.
 
-One *history*, note — but two *schedules*. What you've solved is a single set of facts both
-sites contribute to; how often you review it is tracked separately per track, below.
+Both sources identify problems by **LeetCode slug**, so both join straight to the bundled
+catalogue for real titles, difficulty, and topic tags. See
+[`docs/providers.md`](docs/providers.md) for the exact shapes.
+
+Note that the two are kept apart all the way down: what LeetCode knows about a problem and
+what NeetCode knows are separate records, never merged. Four attempts on LeetCode says
+nothing about how it went on NeetCode.
 
 ## Two tracks
 
@@ -43,26 +52,39 @@ side panel switches the whole UI between them:
 
 | | LeetCode track | NeetCode track |
 |---|---|---|
-| What's in it | Your full submission history | Your NeetCode completions |
+| What's in it | Your full submission history | Your NeetCode work |
 | Typical size | Everything you've ever solved | A curriculum of a few hundred |
-| Solve dates | Real, from each submission | None — NeetCode doesn't record them |
+| Solve dates | Real, from each submission | Real for anything solved in NeetCode's editor; the rest are dateless |
 | Default pace | 15 reviews/day, backlog fanned over 30 days | 10 reviews/day, over 14 days |
 
-Daily limits, target retention, and backlog seeding are set per track, so a gentle NeetCode
-curriculum can run alongside a much larger LeetCode backlog without either one setting the
-pace for the other. The toolbar badge follows whichever track is selected.
+Daily limits, target retention, backlog seeding and the minimum lock are set per track, so
+a gentle NeetCode curriculum can run alongside a much larger LeetCode backlog without
+either one setting the pace for the other. The toolbar badge follows whichever track is
+selected.
 
 A problem you've done on both sites gets a card in **each** track, scheduled separately —
 grading it in one leaves the other where it was. That's the point of the split, but it does
 mean working both tracks will show you some problems twice, on different days. If you only
 want one, just stay on that track; the other costs nothing but the sync.
 
+### Minimum lock
+
+FSRS thinks in flashcards, where seeing a card again ten minutes later is useful. A coding
+problem is not a flashcard: re-solving one six minutes after the last attempt measures
+short-term memory of the answer you just wrote and nothing else — which is what rating
+something Hard used to do.
+
+Settings carries a floor per difficulty, 4/2/1 days by default and 0 to switch it off. It
+applies after FSRS has had its say, so only intervals shorter than the floor move; a mature
+card is untouched.
+
 ### Seeding only applies to dateless problems
 
 A card built from a real LeetCode submission is already scheduled from when you actually
 solved the problem, which is the best information the system has, so the seeding strategy
-leaves it alone. Only problems with no recorded date — everything from NeetCode, plus
-LeetCode's accepted-set backfill — get redistributed.
+leaves it alone. Only problems with no recorded date get
+redistributed: LeetCode's accepted-set backfill, and any NeetCode problem you ticked
+manually or solved elsewhere rather than in its editor.
 
 For the same reason, a dateless report can never move a date a submission vouched for.
 NeetCode saying "two-sum is done" today does not overwrite the fact that you solved it a
@@ -100,21 +122,49 @@ no GitHub permission and makes no GitHub request. It also still keys problems by
 own slugs, so its output would import duplicates until it is rewired to use the slug map
 that `pnpm neetcode:map` now generates.
 
+### Browsing the schedule
+
+The queue shows what is due today and stops there. **Browse all** opens a full page listing
+every problem in the track, soonest first, with a live countdown to each unlock, a filter
+for available versus locked, and a title search.
+
+## Notes for anyone touching the NeetCode adapter
+
+It took several wrong turns to get working, and every one of them failed silently. Worth
+knowing before changing it:
+
+- **A content script cannot fetch an extension asset.** The slug map has to come from the
+  background over messaging. Declaring `catalog/*` web-accessible would work and would also
+  hand the whole catalogue to any page on the origin.
+- **Do not read the auth token from Firebase's IndexedDB.** The stored copy expires hourly,
+  so it is stale far more often than not — that produced an HTTP 401 on every sync. Opening
+  that database also *creates* it when absent, which is not ours to do on someone else's
+  origin. The token is relayed off the page's own requests instead.
+- **NeetCode uses XHR, not `fetch`.** Angular's HttpClient does. An observer that only
+  wraps `fetch` sees nothing, so `setRequestHeader` has to be wrapped to catch the header.
+- **The completed-set read and the history walk share a sync cursor.** The former had been
+  setting it for weeks, so the walk inherited a recent timestamp on its first run and went
+  incremental, fetching one day and declaring the history done.
+
+The general lesson: log at `info`, not `debug`. Chrome files `debug` under Verbose and
+hides it, so a sync that ran, one that failed, and one never attempted all looked
+identical from the console — nothing at all.
+
 ## Layout
 
 | Path | What lives there |
 |---|---|
 | `packages/core` | Domain model, event folding, `Store` interface. Pure TypeScript — no browser APIs, no framework. |
-| `packages/store` | IndexedDB implementation of `Store`, including the v1→v2 per-track migration. |
+| `packages/store` | IndexedDB implementation of `Store`, and the schema migrations — per-track cards, then per-provider problem state. |
 | `packages/catalog` | The bundled problem dataset (4,028 problems), the NeetCode roadmap DAG, and the LeetCode→NeetCode slug map. |
-| `packages/providers` | Site adapters: response parsing and sync orchestration, with the transport injected so both are testable in Node. |
+| `packages/providers` | Site adapters for both sites: response parsing and sync orchestration, with the transport injected so both are testable in Node. |
 | `apps/extension` | WXT + React: background worker, side panel, popup, options, content scripts. |
 
 The important boundary: `@lcs/core` knows nothing about browsers or websites, so the
 scheduler and recommender are testable in Node and reusable verbatim if a web dashboard
-is ever added. `@lcs/providers` knows about websites but not about browsers — the LeetCode
-adapter takes its transport as an argument, which is why its full and incremental syncs
-have real tests. Persistence goes through one interface, which is the entire cost of
+is ever added. `@lcs/providers` knows about websites but not about browsers — both
+adapters take their transport as an argument, which is why their full and incremental syncs
+have real tests rather than mocked ones. Persistence goes through one interface, which is the entire cost of
 adding sync later.
 
 The internal package scope is still `@lcs/*`, from the project's old name. It's invisible
@@ -125,7 +175,7 @@ to users and renaming it would touch every import, so it stayed.
 ```sh
 pnpm install
 pnpm dev            # runs the extension in a dev browser with HMR
-pnpm test           # 202 tests across core, store, catalog, providers, importers
+pnpm test           # 239 tests across core, store, catalog, providers, importers
 pnpm typecheck
 pnpm build          # production build -> apps/extension/.output/chrome-mv3
 pnpm catalog:build  # regenerate the problem dataset from LeetCode's public API
