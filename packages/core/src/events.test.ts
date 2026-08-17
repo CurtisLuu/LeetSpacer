@@ -133,4 +133,85 @@ describe("foldEvents", () => {
     expect(delta.get("two-sum")?.attempts).toBe(2);
     expect(delta.get("two-sum")?.status).toBe("solved");
   });
+
+  it("marks a solve dated only when a submission carried its own timestamp", () => {
+    // This is what tells seeding whether a card's due date can be trusted. An accepted
+    // submission knows when it happened; a bare problem_solved does not.
+    const dated = foldEvents(new Map(), [submission("two-sum", T0, "accepted")]);
+    expect(dated.get("two-sum")?.hasDatedSolve).toBe(true);
+
+    const undated = foldEvents(new Map(), [solved("valid-anagram", T0)]);
+    expect(undated.get("valid-anagram")?.hasDatedSolve).toBe(false);
+  });
+
+  it("never lets a dateless sighting undo a real date", () => {
+    // NeetCode reporting a problem complete after LeetCode already dated it must not
+    // downgrade that problem back to "we don't know when".
+    const initial = foldEvents(new Map(), [submission("two-sum", T0, "accepted")]);
+    const later = foldEvents(initial, [solved("two-sum", T0 + 5 * DAY)]);
+
+    expect(later.get("two-sum")?.hasDatedSolve).toBe(true);
+  });
+
+  it("leaves a failed submission undated", () => {
+    const failed = foldEvents(new Map(), [submission("two-sum", T0, "wrong_answer")]);
+
+    expect(failed.get("two-sum")?.hasDatedSolve).toBe(false);
+    expect(failed.get("two-sum")?.status).toBe("attempted");
+  });
+
+  it("won't let a dateless report drag a real solve date forward", () => {
+    // The failure this guards is severe and silent: you solved two-sum a year ago on
+    // LeetCode, NeetCode reports it complete today, and the real date is replaced by
+    // today's — so a card that should be long overdue looks freshly solved.
+    const real = T0 - 365 * DAY;
+    const state = foldEvents(new Map(), [
+      submission("two-sum", real, "accepted"),
+      solved("two-sum", T0),
+    ]).get("two-sum");
+
+    expect(state?.lastSolvedAt).toBe(real);
+    expect(state?.hasDatedSolve).toBe(true);
+  });
+
+  it("reaches the same date whichever order the two arrive in", () => {
+    const real = T0 - 365 * DAY;
+    const events = [submission("two-sum", real, "accepted"), solved("two-sum", T0)];
+
+    const forward = foldEvents(new Map(), events).get("two-sum");
+    const reversed = foldEvents(new Map(), [...events].reverse()).get("two-sum");
+
+    expect(forward?.lastSolvedAt).toBe(real);
+    expect(reversed?.lastSolvedAt).toBe(real);
+  });
+
+  it("replaces a guessed date the moment a real one shows up", () => {
+    // NeetCode first, so the only date available is "when we noticed". A later LeetCode
+    // sync knows better and should overwrite it, not take the max of the two.
+    const guessed = foldEvents(new Map(), [solved("two-sum", T0)]);
+    expect(guessed.get("two-sum")?.lastSolvedAt).toBe(T0);
+
+    const corrected = foldEvents(guessed, [
+      submission("two-sum", T0 - 100 * DAY, "accepted"),
+    ]);
+    expect(corrected.get("two-sum")?.lastSolvedAt).toBe(T0 - 100 * DAY);
+    expect(corrected.get("two-sum")?.firstSolvedAt).toBe(T0 - 100 * DAY);
+  });
+
+  it("still combines two real dates rather than replacing", () => {
+    const state = foldEvents(new Map(), [
+      submission("two-sum", T0 - 100 * DAY, "accepted"),
+      submission("two-sum", T0 - 10 * DAY, "accepted"),
+    ]).get("two-sum");
+
+    expect(state?.firstSolvedAt).toBe(T0 - 100 * DAY);
+    expect(state?.lastSolvedAt).toBe(T0 - 10 * DAY);
+  });
+
+  it("still accepts a dateless report when nothing better is known", () => {
+    const state = foldEvents(new Map(), [solved("is-anagram", T0)]).get("is-anagram");
+
+    expect(state?.lastSolvedAt).toBe(T0);
+    expect(state?.status).toBe("solved");
+  });
 });

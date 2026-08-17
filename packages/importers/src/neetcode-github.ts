@@ -124,7 +124,13 @@ export interface ImportSummary {
  *
  * Cards are seeded from each problem's most recent solve, so a problem finished in May
  * shows up already overdue rather than starting a fresh schedule today.
+ *
+ * Everything lands in the NeetCode track: the source is a NeetCode GitHub Sync repository,
+ * and importing someone's NeetCode history into their LeetCode schedule would put reviews
+ * in a track they never asked for.
  */
+const IMPORT_TRACK = "neetcode" as const;
+
 export function buildSnapshot(
   submissions: readonly RepoSubmission[],
   options: SnapshotOptions,
@@ -133,19 +139,22 @@ export function buildSnapshot(
   const problems = [...foldEvents(new Map(), events).values()];
 
   const scheduler = createScheduler({
-    requestRetention: options.requestRetention ?? DEFAULT_SETTINGS.requestRetention,
+    requestRetention:
+      options.requestRetention ?? DEFAULT_SETTINGS.tracks[IMPORT_TRACK].requestRetention,
   });
 
   const cards = problems
     .filter((problem) => problem.status === "solved" && problem.lastSolvedAt !== null)
-    .map((problem) => scheduler.seed(problem.slug, problem.lastSolvedAt!, problem.attempts));
+    .map((problem) =>
+      scheduler.seed(IMPORT_TRACK, problem.slug, problem.lastSolvedAt!, problem.attempts),
+    );
 
   const solveTimes = problems
     .map((problem) => problem.lastSolvedAt)
     .filter((at): at is number => at !== null);
 
   const snapshot: StoreSnapshot = {
-    version: 1,
+    version: 2,
     exportedAt: options.now,
     events,
     problems,

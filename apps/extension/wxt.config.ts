@@ -8,11 +8,30 @@ export default defineConfig({
     plugins: [tailwindcss()],
   }),
 
+  // Names the store artifact after the product rather than the workspace package, so
+  // what gets uploaded is `leetspacer-1.0.0-chrome.zip`.
+  zip: {
+    name: "leetspacer",
+  },
+
   manifest: {
-    name: "LeetCode Spaced",
+    name: "LeetSpacer",
+    // 127 characters. The store truncates at 132, so this fits whole rather than being
+    // cut mid-word in the listing.
     description:
-      "Recommends which coding problems to practice next, using spaced repetition over your own NeetCode history. All data stays on your device.",
-    version: "0.1.0",
+      "Spaced repetition for coding interview prep. Schedules reviews from your own LeetCode and NeetCode history, all stored locally.",
+    // No `version` here on purpose — WXT takes it from package.json, so there is one
+    // place to bump and no way for the two to disagree.
+
+    // Regenerate with `python3 scripts/build-icons.py`.
+    icons: {
+      16: "/icons/16.png",
+      32: "/icons/32.png",
+      48: "/icons/48.png",
+      128: "/icons/128.png",
+    },
+
+    homepage_url: "https://github.com/CurtisLuu/leetcode-spaced",
 
     // Deliberately small. `storage` for local state, `sidePanel` for the main UI,
     // `alarms` to schedule background syncs. No `tabs`, no `<all_urls>`, no remote code.
@@ -21,13 +40,19 @@ export default defineConfig({
     // Requested from the options page when you connect a repository, not at install.
     optional_host_permissions: ["https://api.github.com/*"],
 
-    // NeetCode only for now — LeetCode is deferred until its adapter is worked out, and
-    // asking for a host permission we don't use would be both rude and a review risk.
-    // Content scripts are declared statically, so this appears in the install prompt.
-    host_permissions: ["https://neetcode.io/*"],
+    // Both sites are read from a content script on their own origin, using the session
+    // you're already signed in with. Content scripts are declared statically, so these
+    // appear in the install prompt.
+    host_permissions: ["https://neetcode.io/*", "https://leetcode.com/*"],
 
     action: {
-      default_title: "LeetCode Spaced",
+      default_title: "LeetSpacer",
+      default_icon: {
+        16: "/icons/16.png",
+        32: "/icons/32.png",
+        48: "/icons/48.png",
+        128: "/icons/128.png",
+      },
     },
   },
 });

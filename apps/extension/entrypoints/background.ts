@@ -1,29 +1,56 @@
 import {
   type ProviderId,
+  type ReviewCard,
+  type Settings,
   type Store,
+  type TrackId,
+  TRACK_IDS,
   createScheduler,
   distributeDueDates,
   ingestEvents,
+  seedMissingCards,
 } from "@lcs/core";
 
-import { getCatalog } from "../lib/catalog.js";
+import { getCatalog, getProblemLinks } from "../lib/catalog.js";
 import { titleFromSlug } from "../lib/format.js";
 import { type ProviderStatus, type ReviewItem, type SyncStatus, onMessage } from "../lib/messaging.js";
 import { getStore } from "../lib/store.js";
 
-/**
- * Providers with a working data path today. LeetCode is deferred until its adapter is
- * sorted out, so it isn't advertised in the UI or asked for as a permission.
- */
-const ACTIVE_PROVIDERS: ProviderId[] = ["neetcode"];
+/** Providers with a working data path. Both read from a tab you already have open. */
+const ACTIVE_PROVIDERS: ProviderId[] = ["neetcode", "leetcode"];
 
 const SYNC_ALARM = "lcs:incremental-sync";
 const SYNC_PERIOD_MINUTES = 60 * 6;
 const MS_PER_DAY = 86_400_000;
 
+/**
+ * How long an incremental sync stays fresh. LeetCode's content script asks on every page
+ * load, and walking the submission history every time you click a problem would be both
+ * slow and rude.
+ */
+const INCREMENTAL_INTERVAL_MS = 15 * 60 * 1000;
+
 /** Which provider tabs have checked in this browser session. */
 const connected = new Set<ProviderId>();
 const lastError = new Map<ProviderId, string>();
+
+/**
+ * Providers with a sync in flight, so a second tab doesn't duplicate the work.
+ *
+ * In memory on purpose: MV3 tears this worker down freely, and a claim that outlived the
+ * worker would deadlock syncing until the browser restarted. Losing it just means a
+ * redundant sync, which the deterministic event ids make harmless.
+ */
+const syncing = new Set<ProviderId>();
+
+/**
+ * When each provider was last *asked* to sync, successful or not.
+ *
+ * Separate from the stored cursors, which only advance on success. Without it a sync that
+ * keeps failing would be reclaimed by every page load forever — and for a first-run full
+ * sync that means re-walking the entire submission history each time.
+ */
+const lastAttemptAt = new Map<ProviderId, number>();
 
 export default defineBackground(() => {
   // Clicking the toolbar icon opens the side panel, which is the main UI.
@@ -40,28 +67,27 @@ export default defineBackground(() => {
   void refreshBadge();
 
   onMessage({
-    "provider:hello": async ({ provider }) => {
+    "provider:hello": async ({ provider, username }) => {
       connected.add(provider);
       lastError.delete(provider);
+      if (username) await patchProvider(provider, { username });
       return { ack: true };
     },
 
-    "events:ingest": async ({ provider, events }) => {
+    "events:ingest": async ({ provider, events, complete }) => {
       connected.add(provider);
       const store = await getStore();
       const result = await ingestEvents(store, events);
 
       if (result.inserted > 0) {
         await seedMissingCards(store);
-        await store.settings.update({
-          providers: {
-            ...(await store.settings.get()).providers,
-            [provider]: {
-              ...(await store.settings.get()).providers[provider],
-              lastFullSyncAt: Date.now(),
-              lastIncrementalSyncAt: Date.now(),
-            },
-          },
+        const now = Date.now();
+        await patchProvider(provider, {
+          lastIncrementalSyncAt: now,
+          // Only a batch that *is* the whole set proves a full sync happened. LeetCode
+          // pages its history, so an early page saying "full sync done" would strand the
+          // rest of it if the tab closed.
+          ...(complete ? { lastFullSyncAt: now } : {}),
         });
         await refreshBadge();
       }
@@ -71,24 +97,61 @@ export default defineBackground(() => {
 
     "sync:status": async () => buildStatus(),
 
+    "sync:claim": async ({ provider }) => {
+      const declined = { mode: null, since: 0 } as const;
+      const settings = await (await getStore()).settings.get();
+      const state = settings.providers[provider];
+      const now = Date.now();
+
+      if (!state.enabled || syncing.has(provider)) return declined;
+
+      const attempted = lastAttemptAt.get(provider);
+      if (attempted !== undefined && now - attempted < INCREMENTAL_INTERVAL_MS) return declined;
+
+      const since = state.lastFullSyncAt === null
+        ? null
+        : (state.lastIncrementalSyncAt ?? state.lastFullSyncAt);
+
+      if (since !== null && now - since < INCREMENTAL_INTERVAL_MS) return declined;
+
+      syncing.add(provider);
+      lastAttemptAt.set(provider, now);
+      return since === null ? { mode: "full", since: 0 } : { mode: "incremental", since };
+    },
+
+    "sync:completed": async ({ provider, mode, error }) => {
+      syncing.delete(provider);
+      const now = Date.now();
+
+      if (error) {
+        lastError.set(provider, error);
+      } else {
+        lastError.delete(provider);
+        await patchProvider(provider, {
+          lastIncrementalSyncAt: now,
+          ...(mode === "full" ? { lastFullSyncAt: now } : {}),
+        });
+      }
+
+      await refreshBadge();
+      return { ok: true } as const;
+    },
+
     "sync:run": async ({ provider, mode }) => {
-      // Nothing to trigger: NeetCode progress arrives on its own whenever a
-      // neetcode.io tab is open. Reported honestly rather than faking a sync.
-      lastError.set(
-        provider,
-        `Open neetcode.io/practice to sync — there is no manual ${mode} sync.`,
-      );
+      // Nothing to trigger from here: both providers read from a tab on their own origin,
+      // and this worker has no `tabs` permission to reach into one. Reported honestly
+      // rather than faking a sync.
+      const where = provider === "neetcode" ? "neetcode.io/practice" : "leetcode.com";
+      lastError.set(provider, `Open ${where} to sync — there is no manual ${mode} sync.`);
       return buildStatus();
     },
 
-    "reviews:due": async ({ limit }) => {
+    "reviews:due": async ({ track, limit }) => {
       const store = await getStore();
-      const [settings, allDue] = await Promise.all([
-        store.settings.get(),
-        store.cards.due(Date.now()),
-      ]);
+      const settings = await store.settings.get();
+      const allDue = await store.cards.due(track, Date.now());
 
-      const cap = limit ?? settings.dailyReviewLimit;
+      const cap = limit ?? settings.tracks[track].dailyReviewLimit;
       const now = Date.now();
       // Most overdue first — those are the ones closest to being forgotten.
       const selected = [...allDue].sort((a, b) => a.due - b.due).slice(0, cap);
@@ -97,11 +160,15 @@ export default defineBackground(() => {
 
       // Slugs are LeetCode titleSlugs, so the bundled catalog resolves real titles,
       // difficulty, and tags. Falls back gracefully for anything not in it.
-      const catalog = await getCatalog().catch(() => null);
+      const [catalog, links] = await Promise.all([
+        getCatalog().catch(() => null),
+        getProblemLinks(),
+      ]);
 
       const items: ReviewItem[] = selected.map((card) => {
         const state = byslug.get(card.slug);
         const problem = catalog?.bySlug(card.slug);
+        const link = links.resolve(card.slug, settings.problemLinkTarget);
         return {
           slug: card.slug,
           title: problem?.title ?? titleFromSlug(card.slug),
@@ -112,11 +179,12 @@ export default defineBackground(() => {
           reps: card.reps,
           difficulty: problem?.difficulty ?? null,
           topicTags: problem?.topicTags.slice(0, 2) ?? [],
-          url: `https://leetcode.com/problems/${card.slug}/`,
+          url: link.href,
+          site: link.site,
         };
       });
 
-      return { items, totalDue: allDue.length, limit: cap };
+      return { items, totalDue: allDue.length, limit: cap, track };
     },
 
     "data:changed": async () => {
@@ -137,22 +205,34 @@ export default defineBackground(() => {
       return { ok: true } as const;
     },
 
-    "schedule:rebuild": async () => {
-      const result = await rebuildSchedule(await getStore());
+    "schedule:rebuild": async ({ track }) => {
+      const result = await rebuildSchedule(await getStore(), track);
       await refreshBadge();
       return result;
     },
 
     "settings:get": async () => (await getStore()).settings.get(),
 
-    "settings:update": async ({ patch }) => (await getStore()).settings.update(patch),
+    "settings:update": async ({ patch }) => {
+      const next = await (await getStore()).settings.update(patch);
+      // The badge counts the active track, so switching tracks changes what it should
+      // say. Repainting on every settings write is cheaper than working out which
+      // fields the badge depends on, and it can't go stale.
+      await refreshBadge();
+      return next;
+    },
 
-    "reviews:grade": async ({ slug, rating }) => {
+    "reviews:grade": async ({ track, slug, rating }) => {
       const store = await getStore();
-      const [settings, card] = await Promise.all([store.settings.get(), store.cards.get(slug)]);
-      if (!card) throw new Error(`No review card for "${slug}"`);
+      const [settings, card] = await Promise.all([
+        store.settings.get(),
+        store.cards.get(track, slug),
+      ]);
+      if (!card) throw new Error(`No review card for "${slug}" in the ${track} track`);
 
-      const scheduler = createScheduler({ requestRetention: settings.requestRetention });
+      const scheduler = createScheduler({
+        requestRetention: settings.tracks[track].requestRetention,
+      });
       const { card: next, log } = scheduler.review(card, rating, Date.now());
 
       await store.cards.put([next]);
@@ -164,72 +244,71 @@ export default defineBackground(() => {
   });
 });
 
-/**
- * Give every solved problem a review card, without disturbing ones that already have
- * one. Re-running a sync must never reset a schedule you've been building.
- */
-async function seedMissingCards(store: Store): Promise<number> {
-  const settings = await store.settings.get();
-  const scheduler = createScheduler({ requestRetention: settings.requestRetention });
-  const solved = (await store.problems.all()).filter(
-    (problem) => problem.status === "solved" && problem.lastSolvedAt !== null,
-  );
-
-  const seeded = [];
-  for (const problem of solved) {
-    if (await store.cards.get(problem.slug)) continue;
-    seeded.push(scheduler.seed(problem.slug, problem.lastSolvedAt!, Math.max(1, problem.attempts)));
-  }
-
-  if (seeded.length === 0) return 0;
-
-  await store.cards.put(
-    distributeDueDates(seeded, {
-      strategy: settings.seedStrategy,
-      now: Date.now(),
-      spreadDays: settings.seedSpreadDays,
-    }),
-  );
-  return seeded.length;
+/** Update one provider's settings without disturbing the other's. */
+async function patchProvider(
+  provider: ProviderId,
+  patch: Partial<Settings["providers"][ProviderId]>,
+): Promise<void> {
+  const store = await getStore();
+  const { providers } = await store.settings.get();
+  await store.settings.update({
+    providers: { ...providers, [provider]: { ...providers[provider], ...patch } },
+  });
 }
 
 /**
- * Re-seed the schedule using the current settings.
+ * Re-seed one track's schedule using its current settings.
+ *
+ * Scoped to a track because the settings being applied are: rebuilding the NeetCode track
+ * has no business moving cards you've been working through on LeetCode.
  *
  * Only touches cards you've never graded — anything with review history is real data and
- * is left exactly where it is.
+ * is left exactly where it is. Cards with a genuine solve date are re-seeded from it but
+ * kept out of the redistribution, for the same reason seeding skips them.
  */
-async function rebuildSchedule(store: Store): Promise<{ rebuilt: number; kept: number }> {
+async function rebuildSchedule(
+  store: Store,
+  track: TrackId,
+): Promise<{ rebuilt: number; kept: number }> {
   const settings = await store.settings.get();
-  const scheduler = createScheduler({ requestRetention: settings.requestRetention });
-  const [cards, problems] = await Promise.all([store.cards.all(), store.problems.all()]);
+  const tuning = settings.tracks[track];
+  const scheduler = createScheduler({ requestRetention: tuning.requestRetention });
+  const [cards, problems] = await Promise.all([store.cards.all(track), store.problems.all()]);
   const bySlug = new Map(problems.map((problem) => [problem.slug, problem]));
 
-  const untouched = [];
+  const dated: ReviewCard[] = [];
+  const undated: ReviewCard[] = [];
   let kept = 0;
 
   for (const card of cards) {
-    const reviewed = await store.logs.forProblem(card.slug);
+    const reviewed = await store.logs.forProblem(track, card.slug);
     if (reviewed.length > 0) {
       kept += 1;
       continue;
     }
     const problem = bySlug.get(card.slug);
     if (!problem?.lastSolvedAt) continue;
-    untouched.push(scheduler.seed(card.slug, problem.lastSolvedAt, Math.max(1, problem.attempts)));
-  }
-
-  if (untouched.length > 0) {
-    await store.cards.put(
-      distributeDueDates(untouched, {
-        strategy: settings.seedStrategy,
-        now: Date.now(),
-        spreadDays: settings.seedSpreadDays,
-      }),
+    const seeded = scheduler.seed(
+      track,
+      card.slug,
+      problem.lastSolvedAt,
+      Math.max(1, problem.attempts),
     );
+    (problem.hasDatedSolve ? dated : undated).push(seeded);
   }
 
-  return { rebuilt: untouched.length, kept };
+  if (dated.length > 0 || undated.length > 0) {
+    await store.cards.put([
+      ...dated,
+      ...distributeDueDates(undated, {
+        strategy: tuning.seedStrategy,
+        now: Date.now(),
+        spreadDays: tuning.seedSpreadDays,
+      }),
+    ]);
+  }
+
+  return { rebuilt: dated.length + undated.length, kept };
 }
 
 /** Fetched from static assets on first use, not bundled — see lib/catalog.ts. */
@@ -245,6 +324,7 @@ async function getCatalogStats(): Promise<{ count: number; generatedAt: string |
 
 async function buildStatus(): Promise<SyncStatus> {
   const store = await getStore();
+  const now = Date.now();
   const [settings, problems, eventsRecorded, catalog] = await Promise.all([
     store.settings.get(),
     store.problems.all(),
@@ -261,9 +341,26 @@ async function buildStatus(): Promise<SyncStatus> {
     lastError: lastError.get(id) ?? null,
   }));
 
+  // Reported for every track, not just the active one, so the selector can show what's
+  // waiting in the track you're not looking at.
+  const tracks = {} as SyncStatus["tracks"];
+  for (const track of TRACK_IDS) {
+    const [cards, due] = await Promise.all([
+      store.cards.all(track),
+      store.cards.due(track, now),
+    ]);
+    tracks[track] = {
+      tracked: cards.length,
+      solved: problems.filter((p) => p.status === "solved" && p.sources.includes(track)).length,
+      due: due.length,
+    };
+  }
+
   return {
     running: false,
     providers,
+    tracks,
+    activeTrack: settings.activeTrack,
     problemsTracked: problems.length,
     solved: problems.filter((p) => p.status === "solved").length,
     eventsRecorded,
@@ -271,11 +368,18 @@ async function buildStatus(): Promise<SyncStatus> {
   };
 }
 
-/** Badge shows how many reviews are due, which is the only number worth interrupting for. */
+/**
+ * Badge shows how many reviews are due, which is the only number worth interrupting for.
+ *
+ * Scoped to the active track: the badge has to agree with what the panel shows when you
+ * open it, and a total spanning both tracks would send you looking for reviews that
+ * aren't in the one you're working.
+ */
 async function refreshBadge(): Promise<void> {
   try {
     const store = await getStore();
-    const due = await store.cards.due(Date.now());
+    const { activeTrack } = await store.settings.get();
+    const due = await store.cards.due(activeTrack, Date.now());
     const text = due.length === 0 ? "" : String(Math.min(due.length, 99));
     await browser.action.setBadgeText({ text });
     await browser.action.setBadgeBackgroundColor({ color: "#7c3aed" });

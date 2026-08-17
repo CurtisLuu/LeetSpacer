@@ -1,7 +1,21 @@
-import { type Settings, parseSnapshot } from "@lcs/core";
+import {
+  type ProviderId,
+  type Settings,
+  type TrackId,
+  type TrackSettings,
+  parseSnapshot,
+} from "@lcs/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Button, Callout, InfoDot, Section, Tooltip } from "../../components/ui";
+import {
+  Button,
+  Callout,
+  InfoDot,
+  Section,
+  TRACK_LABELS,
+  Tooltip,
+  TrackSwitcher,
+} from "../../components/ui";
 import { send } from "../../lib/messaging";
 import { getStore } from "../../lib/store";
 
@@ -12,16 +26,20 @@ export function App() {
   const [pasting, setPasting] = useState(false);
   const [pasted, setPasted] = useState("");
   const [confirmingReset, setConfirmingReset] = useState(false);
+  // Which track's schedule is being edited. Local, not persisted: it's a view of this
+  // page, not a preference, and it shouldn't move the side panel's selector.
+  const [editing, setEditing] = useState<TrackId>("neetcode");
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const rebuildSchedule = useCallback(async () => {
+  const rebuildSchedule = useCallback(async (track: TrackId) => {
     try {
-      const { rebuilt, kept } = await send("schedule:rebuild", {});
+      const { rebuilt, kept } = await send("schedule:rebuild", { track });
+      const where = `in the ${TRACK_LABELS[track]} track`;
       setFailed(false);
       setMessage(
         kept > 0
-          ? `Rescheduled ${rebuilt} problems. ${kept} already graded, so those were left alone.`
-          : `Rescheduled ${rebuilt} problems.`,
+          ? `Rescheduled ${rebuilt} problems ${where}. ${kept} already graded, so those were left alone.`
+          : `Rescheduled ${rebuilt} problems ${where}.`,
       );
     } catch (error) {
       setFailed(true);
@@ -44,7 +62,12 @@ export function App() {
   useEffect(() => {
     void getStore()
       .then((store) => store.settings.get())
-      .then(setSettings);
+      .then((loaded) => {
+        setSettings(loaded);
+        // Open on whatever the side panel is showing — that's the track you were just
+        // looking at, and so almost always the one you came here to adjust.
+        setEditing(loaded.activeTrack);
+      });
   }, []);
 
   const patch = useCallback(async (update: Partial<Settings>) => {
@@ -60,7 +83,7 @@ export function App() {
     );
     const link = document.createElement("a");
     link.href = url;
-    link.download = `leetcode-spaced-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `leetspacer-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
   }, []);
@@ -75,12 +98,15 @@ export function App() {
       // The background owns the badge and has no idea we just wrote to the store.
       await send("data:changed", {}).catch(() => {});
 
+      // Counted across both tracks: an import can land in either, and reporting only the
+      // one this page happens to be showing would look like half the file went missing.
       const cards = (await store.cards.all()).length;
-      const due = (await store.cards.due(Date.now())).length;
+      const active = (await store.settings.get()).activeTrack;
+      const due = (await store.cards.due(active, Date.now())).length;
       setFailed(false);
       setMessage(
         `Imported ${snapshot.problems.length} problems and ${snapshot.events.length} submissions. ` +
-          `${cards} review cards, ${due} due now.`,
+          `${cards} review cards, ${due} due now in the ${TRACK_LABELS[active]} track.`,
       );
     } catch (error) {
       setFailed(true);
@@ -90,122 +116,198 @@ export function App() {
 
   if (!settings) return <main className="p-6 text-sm">Loading…</main>;
 
+  const track = settings.tracks[editing];
+
+  /** Turn one source's sync on or off, leaving the other alone. */
+  const patchProvider = (provider: ProviderId, enabled: boolean) =>
+    patch({
+      providers: { ...settings.providers, [provider]: { ...settings.providers[provider], enabled } },
+    });
+
+  /** Write one field of the track being edited, leaving the other track alone. */
+  const patchTrack = (update: Partial<TrackSettings>) =>
+    patch({
+      tracks: { ...settings.tracks, [editing]: { ...settings.tracks[editing], ...update } },
+    });
+
   return (
     <main className="mx-auto max-w-xl space-y-6 p-6 text-sm">
       <header>
-        <h1 className="text-lg font-semibold">LeetCode Spaced</h1>
+        <h1 className="text-lg font-semibold">LeetSpacer</h1>
         <p className="text-xs text-ink-muted">
           All data is stored locally in this browser and is never sent anywhere.
         </p>
       </header>
 
-      <Section title="NeetCode history">
-        <div className="space-y-2 rounded-lg border border-border bg-surface-raised p-3">
-          <p className="text-xs text-ink-muted">
-            Open{" "}
-            <a
-              className="text-accent underline underline-offset-2"
-              href="https://neetcode.io/practice"
-              target="_blank"
-              rel="noreferrer"
-            >
-              neetcode.io/practice
-            </a>{" "}
-            while signed in and your completed problems sync automatically — no button, no
-            token. The page already knows what you've finished; the extension just reads it.
-          </p>
-          <p className="text-xs text-ink-muted">
-            Problems are identified by their LeetCode link, so titles, difficulty and topic
-            tags come from the bundled catalogue.
-          </p>
-        </div>
-      </Section>
+      <Section
+        title="Your history"
+        description="Both sources read the session you're already signed in with. No button, no token, no account."
+      >
+        <div className="space-y-3 rounded-lg border border-border bg-surface-raised p-3">
+          <div className="space-y-1">
+            <SourceHeader
+              href="https://leetcode.com/problemset/"
+              label="leetcode.com"
+              enabled={settings.providers.leetcode.enabled}
+              onToggle={(enabled) => void patchProvider("leetcode", enabled)}
+            />
+            <p className="text-xs text-ink-muted">
+              Open any page while signed in and your submission history syncs — with real
+              solve dates and attempt counts, so reviews are scheduled from when you
+              actually solved something. Submitting with a tab open also records the
+              verdict as it lands. The first sync walks your whole history and can take a
+              few minutes; after that it's a single request.
+            </p>
+          </div>
 
-      <Section title="Daily limits">
-        <div className="grid grid-cols-2 gap-3">
-          <NumberField
-            label="Reviews per day"
-            value={settings.dailyReviewLimit}
-            min={0}
-            max={100}
-            onChange={(dailyReviewLimit) => void patch({ dailyReviewLimit })}
-          />
-          <NumberField
-            label="New problems per day"
-            value={settings.dailyNewLimit}
-            min={0}
-            max={50}
-            onChange={(dailyNewLimit) => void patch({ dailyNewLimit })}
-          />
+          <div className="space-y-1 border-t border-border pt-3">
+            <SourceHeader
+              href="https://neetcode.io/practice"
+              label="neetcode.io/practice"
+              enabled={settings.providers.neetcode.enabled}
+              onToggle={(enabled) => void patchProvider("neetcode", enabled)}
+            />
+            <p className="text-xs text-ink-muted">
+              Your completed problems sync as you browse. NeetCode records that a problem
+              is done but never when, so those seed from the schedule below.
+            </p>
+          </div>
+
+          <p className="border-t border-border pt-3 text-xs text-ink-subtle">
+            Both identify problems by their LeetCode link, so the two merge into one
+            history and titles, difficulty and topic tags come from the bundled catalogue.
+          </p>
         </div>
-        <label className="block space-y-1">
-          <span className="flex items-center gap-1.5 text-xs text-ink-muted">
-            Target retention — {Math.round(settings.requestRetention * 100)}%
-            <InfoDot label="The share of reviews you want to get right. 90% is the usual balance; higher means seeing each problem more often." />
-          </span>
-          <input
-            type="range"
-            className="w-full"
-            min={70}
-            max={97}
-            step={1}
-            value={Math.round(settings.requestRetention * 100)}
-            onChange={(e) => void patch({ requestRetention: Number(e.target.value) / 100 })}
-          />
-          <span className="block text-xs text-ink-subtle">
-            Higher means more frequent reviews.
-          </span>
-        </label>
       </Section>
 
       <Section
-        title="Review schedule"
-        description="NeetCode records that a problem is solved, never when — so this decides how an imported backlog is first scheduled."
+        title="Where problems open"
+        description="Which site a problem in the review queue opens on when you click it."
       >
-        <div className="space-y-3 rounded-xl border border-border bg-surface-raised p-3">
-          <fieldset className="space-y-2">
-            <RadioRow
-              name="seedStrategy"
-              checked={settings.seedStrategy === "spread"}
-              label="Spread the backlog out"
-              hint="Fans problems across a window so a steady few come due each day. Hardest first."
-              onSelect={() => void patch({ seedStrategy: "spread" })}
-            />
-            <RadioRow
-              name="seedStrategy"
-              checked={settings.seedStrategy === "now"}
-              label="Make everything due now"
-              hint="The whole backlog is available immediately; the daily limit above is what paces you."
-              onSelect={() => void patch({ seedStrategy: "now" })}
-            />
-          </fieldset>
+        <fieldset className="space-y-2 rounded-xl border border-border bg-surface-raised p-3">
+          <RadioRow
+            name="problemLinkTarget"
+            checked={settings.problemLinkTarget === "neetcode"}
+            label="NeetCode"
+            hint="Opens neetcode.io, where the video walkthrough and editorial are. Problems NeetCode doesn't host fall back to LeetCode."
+            onSelect={() => void patch({ problemLinkTarget: "neetcode" })}
+          />
+          <RadioRow
+            name="problemLinkTarget"
+            checked={settings.problemLinkTarget === "leetcode"}
+            label="LeetCode"
+            hint="Opens leetcode.com, which has every problem."
+            onSelect={() => void patch({ problemLinkTarget: "leetcode" })}
+          />
+        </fieldset>
+      </Section>
 
-          {settings.seedStrategy === "spread" ? (
+      <Section
+        title="Practice tracks"
+        description="Two independent schedules. Pick one here to adjust how it paces you — the other is untouched."
+      >
+        <div className="space-y-4 rounded-xl border border-border bg-surface-raised p-3">
+          <TrackSwitcher value={editing} onChange={setEditing} />
+
+          <p className="text-xs text-ink-subtle">
+            {editing === "leetcode"
+              ? "Your full LeetCode submission history. Most of it carries real solve dates, so those cards are already scheduled from when you actually solved them."
+              : "Your NeetCode completions. NeetCode records that a problem is done but never when, so every card here is seeded by the strategy below."}
+          </p>
+
+          <div className="space-y-3 border-t border-border pt-3">
+            <div className="grid grid-cols-2 gap-3">
+              <NumberField
+                label="Reviews per day"
+                value={track.dailyReviewLimit}
+                min={0}
+                max={100}
+                onChange={(dailyReviewLimit) => void patchTrack({ dailyReviewLimit })}
+              />
+              <NumberField
+                label="New problems per day"
+                value={track.dailyNewLimit}
+                min={0}
+                max={50}
+                onChange={(dailyNewLimit) => void patchTrack({ dailyNewLimit })}
+              />
+            </div>
+
             <label className="block space-y-1">
-              <span className="block text-xs text-ink-muted">
-                Spread across {settings.seedSpreadDays} days
+              <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+                Target retention — {Math.round(track.requestRetention * 100)}%
+                <InfoDot label="The share of reviews you want to get right. 90% is the usual balance; higher means seeing each problem more often." />
               </span>
               <input
                 type="range"
                 className="w-full"
-                min={1}
-                max={60}
+                min={70}
+                max={97}
                 step={1}
-                value={settings.seedSpreadDays}
-                onChange={(e) => void patch({ seedSpreadDays: Number(e.target.value) })}
+                value={Math.round(track.requestRetention * 100)}
+                onChange={(e) =>
+                  void patchTrack({ requestRetention: Number(e.target.value) / 100 })
+                }
               />
-            </label>
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
-            <Button variant="primary" onClick={() => void rebuildSchedule()}>
-              Apply to existing problems
-            </Button>
-            <Tooltip label="Problems you've already graded keep their schedule — only untouched ones move." align="start">
-              <span className="cursor-help text-xs text-ink-subtle underline decoration-dotted underline-offset-2">
-                Reschedules anything you haven't graded yet.
+              <span className="block text-xs text-ink-subtle">
+                Higher means more frequent reviews.
               </span>
-            </Tooltip>
+            </label>
+          </div>
+
+          <div className="space-y-3 border-t border-border pt-3">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-ink">
+              Scheduling a backlog
+              <InfoDot label="Applies only to problems with no real solve date. A LeetCode problem read from your submission history keeps the due date derived from when you actually solved it." />
+            </p>
+
+            <fieldset className="space-y-2">
+              <RadioRow
+                name={`seedStrategy-${editing}`}
+                checked={track.seedStrategy === "spread"}
+                label="Spread the backlog out"
+                hint="Fans problems across a window so a steady few come due each day. Hardest first."
+                onSelect={() => void patchTrack({ seedStrategy: "spread" })}
+              />
+              <RadioRow
+                name={`seedStrategy-${editing}`}
+                checked={track.seedStrategy === "now"}
+                label="Make everything due now"
+                hint="The whole backlog is available immediately; the daily limit above is what paces you."
+                onSelect={() => void patchTrack({ seedStrategy: "now" })}
+              />
+            </fieldset>
+
+            {track.seedStrategy === "spread" ? (
+              <label className="block space-y-1">
+                <span className="block text-xs text-ink-muted">
+                  Spread across {track.seedSpreadDays} days
+                </span>
+                <input
+                  type="range"
+                  className="w-full"
+                  min={1}
+                  max={60}
+                  step={1}
+                  value={track.seedSpreadDays}
+                  onChange={(e) => void patchTrack({ seedSpreadDays: Number(e.target.value) })}
+                />
+              </label>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
+              <Button variant="primary" onClick={() => void rebuildSchedule(editing)}>
+                Apply to the {TRACK_LABELS[editing]} track
+              </Button>
+              <Tooltip
+                label="Problems you've already graded keep their schedule — only untouched ones move, and only in this track."
+                align="start"
+              >
+                <span className="cursor-help text-xs text-ink-subtle underline decoration-dotted underline-offset-2">
+                  Reschedules anything you haven't graded yet.
+                </span>
+              </Tooltip>
+            </div>
           </div>
         </div>
       </Section>
@@ -363,5 +465,38 @@ function NumberField({
         }}
       />
     </label>
+  );
+}
+
+function SourceHeader({
+  href,
+  label,
+  enabled,
+  onToggle,
+}: {
+  href: string;
+  label: string;
+  enabled: boolean;
+  onToggle: (enabled: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <a
+        className="text-xs font-medium text-accent underline underline-offset-2"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {label}
+      </a>
+      <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-muted">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => onToggle(e.target.checked)}
+        />
+        Sync this source
+      </label>
+    </div>
   );
 }

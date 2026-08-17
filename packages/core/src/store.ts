@@ -6,7 +6,14 @@
  * against this interface — no changes to the domain logic, the UI, or the adapters.
  */
 
-import type { ProblemState, ProgressEvent, ReviewCard, ReviewLog, Timestamp } from "./model.js";
+import type {
+  ProblemState,
+  ProgressEvent,
+  ReviewCard,
+  ReviewLog,
+  Timestamp,
+  TrackId,
+} from "./model.js";
 import type { Settings } from "./settings.js";
 
 export interface EventStore {
@@ -34,18 +41,26 @@ export interface ProblemStateStore {
   remove(slugs: readonly string[]): Promise<number>;
 }
 
+/**
+ * Cards, addressed by `(track, slug)`.
+ *
+ * Every read is scoped to a track. That's the whole point of the split: the queue you see
+ * is one track's, and grading in one track must be invisible to the other.
+ */
 export interface CardStore {
-  get(slug: string): Promise<ReviewCard | undefined>;
-  /** Cards due at or before `at`, soonest first. */
-  due(at: Timestamp, limit?: number): Promise<ReviewCard[]>;
-  all(): Promise<ReviewCard[]>;
+  get(track: TrackId, slug: string): Promise<ReviewCard | undefined>;
+  /** Cards in this track due at or before `at`, soonest first. */
+  due(track: TrackId, at: Timestamp, limit?: number): Promise<ReviewCard[]>;
+  /** Every card in one track, or across all tracks when `track` is omitted. */
+  all(track?: TrackId): Promise<ReviewCard[]>;
   put(cards: readonly ReviewCard[]): Promise<void>;
-  remove(slug: string): Promise<void>;
+  remove(track: TrackId, slug: string): Promise<void>;
 }
 
 export interface ReviewLogStore {
   append(logs: readonly ReviewLog[]): Promise<void>;
-  forProblem(slug: string): Promise<ReviewLog[]>;
+  /** This problem's grades within one track. */
+  forProblem(track: TrackId, slug: string): Promise<ReviewLog[]>;
   since(reviewedAfter: Timestamp): Promise<ReviewLog[]>;
 }
 
@@ -61,9 +76,14 @@ export interface MetaStore {
   remove(key: string): Promise<void>;
 }
 
-/** Full local state. Doubles as the export format and the future sync payload. */
+/**
+ * Full local state. Doubles as the export format and the future sync payload.
+ *
+ * Version 2 added `track` to cards and logs. `parseSnapshot` still accepts a version 1
+ * file and migrates it, so old backups keep working.
+ */
 export interface StoreSnapshot {
-  version: 1;
+  version: 2;
   exportedAt: Timestamp;
   events: ProgressEvent[];
   problems: ProblemState[];

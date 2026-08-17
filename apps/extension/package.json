@@ -1,6 +1,6 @@
 {
   "name": "@lcs/extension",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "The Chrome extension: collectors, side panel, popup, options.",
@@ -9,7 +9,8 @@
     "build": "node scripts/sync-catalog.mjs && wxt build",
     "zip": "node scripts/sync-catalog.mjs && wxt zip",
     "postinstall": "wxt prepare",
-    "typecheck": "node scripts/sync-catalog.mjs && wxt prepare && tsc --noEmit"
+    "typecheck": "node scripts/sync-catalog.mjs && wxt prepare && tsc --noEmit",
+    "icons": "python3 scripts/build-icons.py"
   },
   "dependencies": {
     "@lcs/catalog": "workspace:*",

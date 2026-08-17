@@ -3,7 +3,7 @@
  * `@lcs/store`'s IndexedDB version is checked against.
  */
 
-import type { ProblemState, ProgressEvent, ReviewCard, ReviewLog, Timestamp } from "./model.js";
+import { type ProblemState, type ProgressEvent, type ReviewCard, type ReviewLog, type Timestamp, cardKey } from "./model.js";
 import { type Settings, withDefaults } from "./settings.js";
 import type { Store, StoreSnapshot } from "./store.js";
 
@@ -16,7 +16,7 @@ export function createMemoryStore(initial?: Partial<StoreSnapshot>): Store {
 
   for (const ev of initial?.events ?? []) events.set(ev.id, ev);
   for (const p of initial?.problems ?? []) problems.set(p.slug, p);
-  for (const c of initial?.cards ?? []) cards.set(c.slug, c);
+  for (const c of initial?.cards ?? []) cards.set(cardKey(c.track, c.slug), c);
   for (const l of initial?.logs ?? []) logs.set(l.id, l);
 
   const meta = new Map<string, unknown>();
@@ -74,21 +74,24 @@ export function createMemoryStore(initial?: Partial<StoreSnapshot>): Store {
     },
 
     cards: {
-      async get(slug) {
-        return cards.get(slug);
+      async get(track, slug) {
+        return cards.get(cardKey(track, slug));
       },
-      async due(at, limit) {
-        const found = [...cards.values()].filter((c) => c.due <= at).sort((a, b) => a.due - b.due);
+      async due(track, at, limit) {
+        const found = [...cards.values()]
+          .filter((c) => c.track === track && c.due <= at)
+          .sort((a, b) => a.due - b.due);
         return limit === undefined ? found : found.slice(0, limit);
       },
-      async all() {
-        return [...cards.values()];
+      async all(track) {
+        const found = [...cards.values()];
+        return track === undefined ? found : found.filter((c) => c.track === track);
       },
       async put(incoming) {
-        for (const c of incoming) cards.set(c.slug, c);
+        for (const c of incoming) cards.set(cardKey(c.track, c.slug), c);
       },
-      async remove(slug) {
-        cards.delete(slug);
+      async remove(track, slug) {
+        cards.delete(cardKey(track, slug));
       },
     },
 
@@ -96,9 +99,9 @@ export function createMemoryStore(initial?: Partial<StoreSnapshot>): Store {
       async append(incoming) {
         for (const l of incoming) logs.set(l.id, l);
       },
-      async forProblem(slug) {
+      async forProblem(track, slug) {
         return [...logs.values()]
-          .filter((l) => l.slug === slug)
+          .filter((l) => l.track === track && l.slug === slug)
           .sort((a, b) => a.reviewedAt - b.reviewedAt);
       },
       async since(reviewedAfter) {
@@ -130,7 +133,7 @@ export function createMemoryStore(initial?: Partial<StoreSnapshot>): Store {
 
     async exportSnapshot() {
       return {
-        version: 1,
+        version: 2,
         exportedAt: Date.now(),
         events: [...events.values()],
         problems: [...problems.values()],
@@ -144,7 +147,7 @@ export function createMemoryStore(initial?: Partial<StoreSnapshot>): Store {
       if (mode === "replace") await store.clear();
       for (const ev of snapshot.events) if (!events.has(ev.id)) events.set(ev.id, ev);
       for (const p of snapshot.problems) problems.set(p.slug, p);
-      for (const c of snapshot.cards) cards.set(c.slug, c);
+      for (const c of snapshot.cards) cards.set(cardKey(c.track, c.slug), c);
       for (const l of snapshot.logs) logs.set(l.id, l);
       settings = withDefaults(snapshot.settings);
     },

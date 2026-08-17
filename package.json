@@ -1,5 +1,5 @@
 {
-  "name": "leetcode-spaced",
+  "name": "leetspacer",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,9 +7,11 @@
   "scripts": {
     "dev": "pnpm --filter @lcs/extension dev",
     "build": "pnpm -r --if-present build",
+    "zip": "pnpm --filter @lcs/extension zip",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
     "catalog:build": "pnpm --filter @lcs/catalog build:data",
+    "neetcode:map": "pnpm --filter @lcs/catalog build:neetcode-map",
     "import:neetcode": "pnpm --filter @lcs/importers import:neetcode"
   },
   "engines": {

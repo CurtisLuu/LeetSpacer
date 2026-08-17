@@ -13,6 +13,7 @@ export * from "./field";
 export * from "./grade-button";
 export * from "./meter";
 export * from "./tooltip";
+export * from "./track-switcher";
 
 /* -------------------------------------------------------------------------- */
 /* Layout                                                                      */

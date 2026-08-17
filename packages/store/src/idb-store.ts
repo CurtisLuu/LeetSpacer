@@ -6,9 +6,10 @@ import {
   type Settings,
   type Store,
   type StoreSnapshot,
+  trackForLegacyCard,
   withDefaults,
 } from "@lcs/core";
-import { type IDBPDatabase, openDB } from "idb";
+import { type IDBPDatabase, type IDBPTransaction, type StoreNames, openDB } from "idb";
 
 import { DB_NAME, DB_VERSION, type LcsDB, META_PREFIX, SETTINGS_KEY } from "./schema.js";
 
@@ -16,7 +17,7 @@ export type LcsDatabase = IDBPDatabase<LcsDB>;
 
 export function openLcsDb(name = DB_NAME): Promise<LcsDatabase> {
   return openDB<LcsDB>(name, DB_VERSION, {
-    upgrade(db) {
+    async upgrade(db, oldVersion, _newVersion, tx) {
       if (!db.objectStoreNames.contains("events")) {
         const events = db.createObjectStore("events", { keyPath: "id" });
         events.createIndex("observedAt", "observedAt");
@@ -26,20 +27,87 @@ export function openLcsDb(name = DB_NAME): Promise<LcsDatabase> {
         problems.createIndex("status", "status");
         problems.createIndex("lastSolvedAt", "lastSolvedAt");
       }
-      if (!db.objectStoreNames.contains("cards")) {
-        const cards = db.createObjectStore("cards", { keyPath: "slug" });
-        cards.createIndex("due", "due");
-      }
-      if (!db.objectStoreNames.contains("logs")) {
-        const logs = db.createObjectStore("logs", { keyPath: "id" });
-        logs.createIndex("slug", "slug");
-        logs.createIndex("reviewedAt", "reviewedAt");
-      }
       if (!db.objectStoreNames.contains("kv")) {
         db.createObjectStore("kv");
       }
+
+      // Fresh database: create the per-track stores directly.
+      if (oldVersion < 1) {
+        createCardStore(db);
+        createLogStore(db);
+        return;
+      }
+
+      // Existing database from before the track split. A keyPath can't be altered in
+      // place, so the rows are read out, the stores rebuilt, and the rows written back
+      // with a track attached. Everyone's schedules survive; only their address changes.
+      if (oldVersion < 2) await migrateToTracks(db, tx);
     },
   });
+}
+
+function createCardStore(db: IDBPDatabase<LcsDB>): void {
+  const cards = db.createObjectStore("cards", { keyPath: ["track", "slug"] });
+  cards.createIndex("trackDue", ["track", "due"]);
+}
+
+function createLogStore(db: IDBPDatabase<LcsDB>): void {
+  const logs = db.createObjectStore("logs", { keyPath: "id" });
+  logs.createIndex("trackSlug", ["track", "slug"]);
+  logs.createIndex("reviewedAt", "reviewedAt");
+}
+
+/**
+ * Move v1's slug-keyed cards and logs into per-track stores.
+ *
+ * Each row is assigned the one track its problem's sources point at — never both. A
+ * duplicated card would mean the same review landing in two queues on two schedules, and
+ * a duplicated *log* would be a fabricated grade, which is worse: it's a claim you
+ * reviewed something you didn't. Whichever track a problem isn't placed in simply starts
+ * empty there and gets seeded on the next sync.
+ */
+async function migrateToTracks(
+  db: IDBPDatabase<LcsDB>,
+  tx: IDBPTransaction<LcsDB, StoreNames<LcsDB>[], "versionchange">,
+): Promise<void> {
+  const problems = (await tx.objectStore("problems").getAll()) as ProblemState[];
+  const sourcesBySlug = new Map(problems.map((problem) => [problem.slug, problem]));
+  const trackFor = (slug: string) => trackForLegacyCard(sourcesBySlug.get(slug));
+
+  // Read everything out before the stores are torn down.
+  const legacyCards = tx.objectStoreNames.contains("cards")
+    ? ((await tx.objectStore("cards").getAll()) as Omit<ReviewCard, "track">[])
+    : [];
+  const legacyLogs = tx.objectStoreNames.contains("logs")
+    ? ((await tx.objectStore("logs").getAll()) as Omit<ReviewLog, "track">[])
+    : [];
+
+  if (db.objectStoreNames.contains("cards")) db.deleteObjectStore("cards");
+  if (db.objectStoreNames.contains("logs")) db.deleteObjectStore("logs");
+  createCardStore(db);
+  createLogStore(db);
+
+  const cards = tx.objectStore("cards");
+  for (const card of legacyCards) {
+    await cards.put({ ...card, track: trackFor(card.slug) });
+  }
+
+  const logs = tx.objectStore("logs");
+  for (const log of legacyLogs) {
+    const track = trackForLegacyCard(sourcesBySlug.get(log.slug));
+    await logs.put({ ...log, track, id: `${track}:${log.slug}:${log.reviewedAt}` });
+  }
+}
+
+/**
+ * Every `[track, due]` key for one track, optionally capped at `until`.
+ *
+ * The open upper bound is `[track, []]`: IndexedDB sorts arrays after every number, so an
+ * empty array is a clean "greater than any due date" sentinel and avoids relying on
+ * `Infinity` being a valid key.
+ */
+function trackRange(track: string, until?: number): IDBKeyRange {
+  return IDBKeyRange.bound([track], [track, until ?? []]);
 }
 
 export function createIdbStore(db: LcsDatabase): Store {
@@ -115,23 +183,26 @@ export function createIdbStore(db: LcsDatabase): Store {
     },
 
     cards: {
-      async get(slug) {
-        return db.get("cards", slug);
+      async get(track, slug) {
+        return db.get("cards", [track, slug]);
       },
-      async due(at, limit) {
-        const found = await db.getAllFromIndex("cards", "due", IDBKeyRange.upperBound(at), limit);
-        return found;
+      async due(track, at, limit) {
+        // The compound index orders by track first, then due, so bounding both ends keeps
+        // the scan inside this track. `[track]` sorts before any `[track, n]` because a
+        // shorter array precedes a longer one sharing its prefix.
+        return db.getAllFromIndex("cards", "trackDue", trackRange(track, at), limit);
       },
-      async all() {
-        return db.getAll("cards");
+      async all(track) {
+        if (track === undefined) return db.getAll("cards");
+        return db.getAllFromIndex("cards", "trackDue", trackRange(track));
       },
       async put(cards) {
         const tx = db.transaction("cards", "readwrite");
         await Promise.all(cards.map((c) => tx.store.put(c)));
         await tx.done;
       },
-      async remove(slug) {
-        await db.delete("cards", slug);
+      async remove(track, slug) {
+        await db.delete("cards", [track, slug]);
       },
     },
 
@@ -141,8 +212,8 @@ export function createIdbStore(db: LcsDatabase): Store {
         await Promise.all(logs.map((l) => tx.store.put(l)));
         await tx.done;
       },
-      async forProblem(slug) {
-        const found = await db.getAllFromIndex("logs", "slug", slug);
+      async forProblem(track, slug) {
+        const found = await db.getAllFromIndex("logs", "trackSlug", [track, slug]);
         return found.sort((a, b) => a.reviewedAt - b.reviewedAt);
       },
       async since(reviewedAfter) {
@@ -182,7 +253,7 @@ export function createIdbStore(db: LcsDatabase): Store {
         db.getAll("logs"),
         store.settings.get(),
       ]);
-      return { version: 1, exportedAt: Date.now(), events, problems, cards, logs, settings };
+      return { version: 2, exportedAt: Date.now(), events, problems, cards, logs, settings };
     },
 
     async importSnapshot(snapshot: StoreSnapshot, mode) {

@@ -17,7 +17,7 @@ import {
   generatorParameters,
 } from "ts-fsrs";
 
-import type { CardPhase, ReviewCard, ReviewLog, ReviewRating, Timestamp } from "./model.js";
+import type { CardPhase, ReviewCard, ReviewLog, ReviewRating, Timestamp, TrackId } from "./model.js";
 
 export interface SchedulerOptions {
   /** FSRS target retention, 0..1. Higher means more frequent reviews. */
@@ -54,8 +54,9 @@ function toFsrs(card: ReviewCard): FsrsCard {
   };
 }
 
-function fromFsrs(slug: string, card: FsrsCard): ReviewCard {
+function fromFsrs(track: TrackId, slug: string, card: FsrsCard): ReviewCard {
   return {
+    track,
     slug,
     due: card.due.getTime(),
     stability: card.stability,
@@ -84,7 +85,7 @@ export interface Scheduler {
    * This is what turns an import of historical solves into a working review queue —
    * something solved in May is already overdue, and should say so.
    */
-  seed(slug: string, solvedAt: Timestamp, attempts: number): ReviewCard;
+  seed(track: TrackId, slug: string, solvedAt: Timestamp, attempts: number): ReviewCard;
 
   /** Days until due; negative means overdue. */
   daysUntilDue(card: ReviewCard, now: Timestamp): number;
@@ -116,9 +117,10 @@ export function createScheduler(options: SchedulerOptions = {}): Scheduler {
       const { card: next, log } = engine.next(toFsrs(card), new Date(now), rating as Grade);
 
       return {
-        card: fromFsrs(card.slug, next),
+        card: fromFsrs(card.track, card.slug, next),
         log: {
-          id: `${card.slug}:${now}`,
+          id: `${card.track}:${card.slug}:${now}`,
+          track: card.track,
           slug: card.slug,
           rating,
           reviewedAt: now,
@@ -130,12 +132,12 @@ export function createScheduler(options: SchedulerOptions = {}): Scheduler {
       };
     },
 
-    seed(slug, solvedAt, attempts) {
+    seed(track, slug, solvedAt, attempts) {
       const solvedDate = new Date(solvedAt);
       const empty = createEmptyCard(solvedDate);
       const grade = gradeFromAttempts(attempts) as Grade;
       const { card } = engine.next(empty, solvedDate, grade);
-      return fromFsrs(slug, card);
+      return fromFsrs(track, slug, card);
     },
 
     daysUntilDue(card, now) {

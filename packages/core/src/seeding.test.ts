@@ -8,6 +8,7 @@ const NOW = 1_786_929_717_000;
 
 function card(slug: string, difficulty: number): ReviewCard {
   return {
+    track: "neetcode",
     slug,
     due: NOW + 600_000, // the ~10 minute learning step that makes an import look empty
     stability: 1,

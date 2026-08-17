@@ -84,7 +84,7 @@ async function fetchPage(skip: number): Promise<{ total: number; questions: RawQ
     headers: {
       "content-type": "application/json",
       // Identify the tool rather than impersonating a browser.
-      "user-agent": "leetcode-spaced-catalog-builder (dev build script)",
+      "user-agent": "leetspacer-catalog-builder (dev build script)",
     },
     body: JSON.stringify({
       query: QUERY,
