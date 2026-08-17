@@ -1,15 +1,44 @@
-import { Button, Callout, ProviderCard, Section, Stat, Tooltip } from "../../components/ui";
+import {
+  Button,
+  Callout,
+  ProviderCard,
+  Section,
+  Stat,
+  TRACK_LABELS,
+  Tooltip,
+  TrackSwitcher,
+} from "../../components/ui";
 import { useStatus } from "../../lib/use-status";
+import { useTrack } from "../../lib/use-track";
 import { ReviewQueue } from "./ReviewQueue";
 
 export function App() {
-  const { status, error } = useStatus();
+  const { status, error, refresh } = useStatus();
+  const { track, setTrack } = useTrack();
+
+  const stats = track ? status?.tracks?.[track] : undefined;
 
   return (
-    <div className="flex min-h-screen flex-col gap-5 p-4 text-sm">
-      <header>
-        <h1 className="text-base font-semibold">LeetCode Spaced</h1>
-        <p className="text-xs text-ink-muted">Everything stays on this device.</p>
+    <div className="flex min-h-screen flex-col gap-4 p-4 text-sm">
+      <header className="space-y-3">
+        <div>
+          <h1 className="text-base font-semibold">LeetSpacer</h1>
+          <p className="text-xs text-ink-muted">Everything stays on this device.</p>
+        </div>
+
+        <TrackSwitcher
+          value={track ?? "neetcode"}
+          disabled={track === null}
+          due={{
+            leetcode: status?.tracks?.leetcode.due ?? 0,
+            neetcode: status?.tracks?.neetcode.due ?? 0,
+          }}
+          onChange={(next) => {
+            setTrack(next);
+            // The badge follows the active track, and the background is what paints it.
+            void refresh();
+          }}
+        />
       </header>
 
       {error ? (
@@ -18,17 +47,25 @@ export function App() {
         </Callout>
       ) : null}
 
-      <ReviewQueue />
+      {/* Keyed on the track so switching remounts the queue rather than showing the
+          previous track's rows while the new ones load. */}
+      {track ? <ReviewQueue key={track} track={track} /> : null}
 
-      <Section title="Collected">
+      <Section title={track ? `${TRACK_LABELS[track]} track` : "Collected"}>
         <div className="grid grid-cols-3 gap-2">
-          <Tooltip label="Problems with a review card" align="start">
-            <Stat label="Tracked" value={status?.problemsTracked ?? "—"} tone="accent" className="w-full" />
+          <Tooltip label="Problems with a review card in this track" align="start">
+            <Stat label="Tracked" value={stats?.tracked ?? "—"} tone="accent" className="w-full" />
           </Tooltip>
-          <Tooltip label="Problems NeetCode says you've completed">
-            <Stat label="Solved" value={status?.solved ?? "—"} tone="good" className="w-full" />
+          <Tooltip
+            label={
+              track === "leetcode"
+                ? "Problems LeetCode says you've solved"
+                : "Problems NeetCode says you've completed"
+            }
+          >
+            <Stat label="Solved" value={stats?.solved ?? "—"} tone="good" className="w-full" />
           </Tooltip>
-          <Tooltip label="Submissions recorded in the append-only log" align="end">
+          <Tooltip label="Submissions recorded in the append-only log, across both tracks" align="end">
             <Stat label="Events" value={status?.eventsRecorded ?? "—"} tone="info" className="w-full" />
           </Tooltip>
         </div>

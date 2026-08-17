@@ -13,52 +13,84 @@ never make a cross-origin request or handle a credential), throttled via
 
 ## LeetCode
 
-### Confirmed
+### Implemented — this is the live data path
+
+Read by `entrypoints/leetcode.content.ts` (ISOLATED) and `leetcode-hook.content.ts`
+(MAIN), parsed by `packages/providers/src/leetcode/`. Everything below runs same-origin
+from a leetcode.com tab, throttled at ~1 request/second with jitter.
+
+**Session — `globalData`.** One GraphQL round trip; the same call every LeetCode page
+makes on load. A sync refuses to start unless this reports a username, so a signed-out
+tab can never import an empty history over a real one.
+
+```
+POST /graphql/  { operationName: "globalData" }
+-> { data: { userStatus: { userId, username, isSignedIn, isPremium } } }
+```
+
+**Submission history — `/api/submissions/`.** The primary source, and the only one that
+carries dates. REST, not GraphQL.
+
+```
+GET /api/submissions/?offset=0&limit=20&lastkey=<cursor>
+-> { submissions_dump: [ { id, title_slug, timestamp, status, status_display, lang, ... } ],
+     has_next, last_key }
+```
+
+Notes:
+
+- `timestamp` is epoch **seconds**. `parse.ts` refuses anything before 2010 rather than
+  risk folding a misread field in as a solve date.
+- Paginate by `lastkey`, **not** `offset` — offset paging repeats rows once a history is
+  long enough, which would silently double-count attempts.
+- Failed submissions are kept: they are what attempt counts are made of, and attempts are
+  what seed a card's initial difficulty.
+- Events are keyed on the submission id alone, deliberately excluding the timestamp, so a
+  verdict seen live and the same submission seen later by a history sync are one event.
+
+**Accepted set — `problemsetQuestionList(filters: {status: "AC"})`.** Dateless backfill
+for problems the history didn't reach, since LeetCode truncates long histories. Rows are
+only trusted when the row itself says `ac` — a signed-out request returns the same shape
+with a null status for everything, and trusting the server-side filter alone would import
+the entire problem set as solved. A failure here does not fail the sync.
+
+**Live verdict — the judge poll.** The page polls this itself after you submit; the MAIN
+world observer relays it.
+
+```
+GET /submissions/detail/<submissionId>/check/
+-> { state: "PENDING" | "STARTED" | "SUCCESS", status_code, status_msg, ... }
+```
+
+Only `state: "SUCCESS"` is a result. The body carries no slug — the page URL identifies
+the problem and the poll URL carries the submission id.
+
+**Profile feed — `recentAcSubmissionList`.** Fallback only, used when `/api/submissions/`
+returns nothing. Capped by LeetCode at 20 and accepted-only, so it cannot replace the
+history walk.
 
 **Public problem catalog — `problemsetQuestionList`.** Verified working unauthenticated
 on 2026-08-16 by `packages/catalog/scripts/build-catalog.ts`; returned 4,028 problems
-across 41 pages of 100. This is a developer build step, not runtime behaviour.
+across 41 pages of 100. A developer build step, not runtime behaviour. `acRate` comes back
+as a percentage and is stored as 0..1. 780 of 4,028 problems are Premium-only. 175
+distinct topic tags. No auth header or CSRF token was needed for this query.
 
-```
-POST https://leetcode.com/graphql/
-query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput)
-  -> questionList { total: totalNum, questions: data { acRate difficulty
-       frontendQuestionId: questionFrontendId paidOnly: isPaidOnly title titleSlug
-       topicTags { slug } } }
-```
+### Still unverified against a live signed-in account
 
-Notes: `acRate` comes back as a percentage and is stored as 0..1. 780 of 4,028 problems
-are Premium-only. 175 distinct topic tags. No auth header or CSRF token was needed for
-this query.
+The shapes above are implemented from LeetCode's documented and long-stable endpoints, but
+have **not** been replayed against a real session in this repo. What to confirm, and what
+happens if each is wrong:
 
-### To verify — use capture mode
+| # | Check | If it's wrong |
+|---|---|---|
+| 1 | `/api/submissions/` still returns `submissions_dump` with `title_slug` and `timestamp` | No dated events; sync falls through to `recentAcSubmissionList`, then to the dateless accepted set. Degraded, not broken. |
+| 2 | `lastkey` still cursors correctly and `has_next` terminates | Either a short read (missing history) or the 400-page cap trips. `phase: "submissions-truncated"` is reported when the cap is hit. |
+| 3 | `problemsetQuestionList` still accepts `filters: {status: "AC"}` and returns per-row `status` | Backfill yields nothing; caught and reported, sync still completes. |
+| 4 | Whether user-scoped queries require `x-csrftoken` from the `csrftoken` cookie | `createLeetcodeTransport` already sends it when present. If LeetCode starts requiring more, the transport throws and the error surfaces on the provider card. |
+| 5 | The judge poll still uses `state`/`status_msg` | No live verdicts; the next history sync picks the submission up anyway. |
 
-The extension records this for you. Load it, open the side panel, tick **Record LeetCode
-API shapes**, then walk the checklist it shows — it ticks each item off as the matching
-operation is observed. Export when all five are covered and drop the JSON in
-`fixtures/leetcode/`.
-
-The MAIN-world observer (`lib/network-observer.ts`) records both request and response
-bodies for anything matching `/graphql|/submissions/`, capped at three examples per
-operation so the export is a set of distinct shapes rather than a log of your browsing.
-Capture mode is off by default and writes to a separate IndexedDB database
-(`leetcode-spaced-captures`) that is deleted along with the rest of this scaffolding once
-P2 lands.
-
-Manual DevTools capture works too, if you'd rather: filter Network to `graphql` and save
-the request *and* response for each row below.
-
-| # | Page to visit | What we need | Why it matters |
-|---|---|---|---|
-| 1 | `leetcode.com/progress/` | The query backing the solved/attempted list — name, variables, and whether it returns a **per-problem last-submitted timestamp** | This is the spine of spaced repetition. Without a per-problem timestamp we can only schedule from the moment of install. |
-| 2 | `leetcode.com/problemset/` while signed in | Whether `problemsetQuestionList` accepts a `status: AC` filter and returns `status` per question | Paginated fallback for the full solved set if #1 changes shape. |
-| 3 | Profile page | `recentAcSubmissionList(username, limit)` — shape and how far back it reaches | Cheap incremental delta; the default sync path. |
-| 4 | A solved problem's submissions tab | The per-question submission history query — attempt counts, verdicts, timestamps | Weakness mining (≥3 attempts) and deriving a grade when the user dismisses the rating prompt. |
-| 5 | Submit any problem | The exact URL and body of the submission-check poll, and the field holding `Accepted` / `Wrong Answer` | Fires the post-accept rating prompt. Narrows the deliberately-broad filter in `entrypoints/leetcode-hook.content.ts`. |
-
-Also confirm: does a mutating or user-scoped query require an `x-csrftoken` header taken
-from the `csrftoken` cookie? Record the answer — the adapter reads that cookie via
-`document.cookie` on the same origin.
+Every one of these degrades rather than corrupts, which is the property the parsers were
+written for: an unrecognized shape yields nothing instead of a wrong guess.
 
 ### Fallback
 
@@ -91,6 +123,37 @@ NeetCode's data: it means NeetCode's own slugs (`is-anagram`, `three-integer-sum
 `buy-and-sell-crypto`) never enter the system, and everything joins directly to the
 bundled catalogue for titles, difficulty, and topic tags. The topic key is NeetCode's
 roadmap grouping.
+
+### Confirmed — the slug map, for linking *back* to NeetCode
+
+The above holds for NeetCode's *progress* data. Its *pages* are a different matter, and
+sending a user to NeetCode needs the reverse translation. Two public sources, both read by
+`packages/catalog/scripts/build-neetcode-map.ts` (`pnpm neetcode:map`), neither requiring
+an account:
+
+1. **`neetcode.io/sitemap.xml`.** 588 `/problems/<nc-slug>` URLs — the set of NeetCode
+   problem pages. Careful: the same sitemap's 973 `/solutions/<slug>` URLs are keyed by
+   **LeetCode** slug, not NeetCode's. Mixing the two produces mappings that 404.
+2. **The app bundle's rename table.** A literal `{"<nc-slug>": "<lc-slug>"}` object with
+   73 entries, which NeetCode uses to normalize a slug before looking up a visualization.
+   Chunk filenames are content-hashed, so the script rediscovers them from `/practice` →
+   `runtime.<hash>.js` → the chunk table on every run, and locates the object by a known
+   member rather than a minified variable name.
+
+The other 514 problems keep LeetCode's slug, and that assumption is checked against the
+bundled catalog — a NeetCode slug resolving to no known LeetCode problem is reported, not
+written. Three needed a hand-written entry (`MANUAL_RENAMES` in the script), because
+NeetCode only ships a rename entry for problems that have a visualization:
+`reorder-linked-list`, `search-2d-matrix`, `merge-triplets-to-form-target`.
+
+Result: 588 mappings in `packages/catalog/data/neetcode-slugs.json`. The remaining ~3,440
+LeetCode problems have no NeetCode page and link to LeetCode instead.
+
+Open question worth an hour with a browser: NeetCode publishes 973 solution pages but only
+588 problem pages in its sitemap. If `/problems/<lc-slug>` also resolves for those other
+385, coverage could nearly double. The sitemap is the published contract, so the map
+sticks to it until someone confirms otherwise in a real browser — the site is an SPA that
+returns HTTP 200 for every path, so this can't be settled with `curl`.
 
 Verified against a real account: 76 problems across 12 topics, parsed by
 `packages/providers/src/neetcode/progress.ts`.

@@ -26,7 +26,7 @@ describe("gradeFromAttempts", () => {
 
 describe("seed", () => {
   it("schedules relative to when it was actually solved, not now", () => {
-    const card = scheduler.seed("two-sum", MAY, 1);
+    const card = scheduler.seed("neetcode", "two-sum", MAY, 1);
 
     expect(card.lastReview).toBe(MAY);
     expect(card.due).toBeGreaterThan(MAY);
@@ -36,15 +36,15 @@ describe("seed", () => {
   });
 
   it("gives a struggled problem a shorter interval than a clean one", () => {
-    const clean = scheduler.seed("clean", MAY, 1);
-    const struggled = scheduler.seed("struggled", MAY, 5);
+    const clean = scheduler.seed("neetcode", "clean", MAY, 1);
+    const struggled = scheduler.seed("neetcode", "struggled", MAY, 5);
 
     expect(struggled.due - MAY).toBeLessThanOrEqual(clean.due - MAY);
     expect(struggled.difficulty).toBeGreaterThan(clean.difficulty);
   });
 
   it("produces a card that survives a round trip through review", () => {
-    const seeded = scheduler.seed("two-sum", MAY, 1);
+    const seeded = scheduler.seed("neetcode", "two-sum", MAY, 1);
     const { card } = scheduler.review(seeded, Rating.Good, NOW);
 
     expect(card.reps).toBe(seeded.reps + 1);
@@ -55,7 +55,7 @@ describe("seed", () => {
 
 describe("review", () => {
   it("pushes the next review further out for Easy than for Hard", () => {
-    const seeded = scheduler.seed("two-sum", MAY, 1);
+    const seeded = scheduler.seed("neetcode", "two-sum", MAY, 1);
 
     const easy = scheduler.review(seeded, Rating.Easy, NOW).card;
     const hard = scheduler.review(seeded, Rating.Hard, NOW).card;
@@ -64,7 +64,7 @@ describe("review", () => {
   });
 
   it("brings a forgotten card back within the day", () => {
-    const seeded = scheduler.seed("two-sum", MAY, 1);
+    const seeded = scheduler.seed("neetcode", "two-sum", MAY, 1);
     const { card } = scheduler.review(seeded, Rating.Again, NOW);
 
     expect(scheduler.daysUntilDue(card, NOW)).toBeLessThan(1);
@@ -73,7 +73,7 @@ describe("review", () => {
   it("counts a lapse and relearns only once the card has matured", () => {
     // FSRS only records a lapse when a card in the review phase is forgotten. A freshly
     // seeded card is still in learning, so it has to graduate first.
-    let card = scheduler.seed("two-sum", MAY, 1);
+    let card = scheduler.seed("neetcode", "two-sum", MAY, 1);
     let at = NOW;
     for (let i = 0; i < 5 && card.phase !== "review"; i++) {
       at = card.due;
@@ -88,11 +88,14 @@ describe("review", () => {
   });
 
   it("writes a log entry keyed to the review moment", () => {
-    const seeded = scheduler.seed("two-sum", MAY, 1);
+    const seeded = scheduler.seed("neetcode", "two-sum", MAY, 1);
     const { log } = scheduler.review(seeded, Rating.Good, NOW, "derived");
 
     expect(log).toMatchObject({
-      id: `two-sum:${NOW}`,
+      // Track-qualified, so grading the same problem in both tracks writes two logs
+      // rather than one silently overwriting the other.
+      id: `neetcode:two-sum:${NOW}`,
+      track: "neetcode",
       slug: "two-sum",
       rating: Rating.Good,
       reviewedAt: NOW,
@@ -104,8 +107,8 @@ describe("review", () => {
     const relaxed = createScheduler({ requestRetention: 0.7 });
     const strict = createScheduler({ requestRetention: 0.97 });
 
-    const relaxedDue = relaxed.review(relaxed.seed("s", MAY, 1), Rating.Good, NOW).card.due;
-    const strictDue = strict.review(strict.seed("s", MAY, 1), Rating.Good, NOW).card.due;
+    const relaxedDue = relaxed.review(relaxed.seed("neetcode", "s", MAY, 1), Rating.Good, NOW).card.due;
+    const strictDue = strict.review(strict.seed("neetcode", "s", MAY, 1), Rating.Good, NOW).card.due;
 
     expect(relaxedDue).toBeGreaterThan(strictDue);
   });

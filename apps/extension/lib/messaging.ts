@@ -5,6 +5,7 @@ import type {
   ProviderId,
   ReviewRating,
   Settings,
+  TrackId,
 } from "@lcs/core";
 
 /** One row in the review queue, flattened for display. */
@@ -21,6 +22,8 @@ export interface ReviewItem {
   difficulty: Difficulty | null;
   topicTags: string[];
   url: string;
+  /** Which site `url` points at — NeetCode when it hosts the problem, else LeetCode. */
+  site: ProviderId;
 }
 
 export type SyncMode = "full" | "incremental";
@@ -35,9 +38,21 @@ export interface ProviderStatus {
   lastError: string | null;
 }
 
+/** One track's headline numbers, so the selector can show both without two round trips. */
+export interface TrackStatus {
+  /** Problems with a review card in this track. */
+  tracked: number;
+  /** Problems this track's provider says you've solved. */
+  solved: number;
+  due: number;
+}
+
 export interface SyncStatus {
   running: boolean;
   providers: ProviderStatus[];
+  tracks: Record<TrackId, TrackStatus>;
+  activeTrack: TrackId;
+  /** Across every track — distinct problems, not the sum of the per-track counts. */
   problemsTracked: number;
   solved: number;
   eventsRecorded: number;
@@ -53,15 +68,45 @@ export interface MessageMap {
   "sync:run": { req: { provider: ProviderId; mode: SyncMode }; res: SyncStatus };
   "sync:status": { req: Record<string, never>; res: SyncStatus };
   "events:ingest": {
-    req: { provider: ProviderId; events: ProgressEvent[] };
+    req: {
+      provider: ProviderId;
+      events: ProgressEvent[];
+      /**
+       * This batch is the provider's *entire* known set, not a delta. NeetCode's payload
+       * always is; LeetCode's arrives in pages, so it marks completion separately.
+       */
+      complete?: boolean;
+    };
     res: IngestResult;
   };
-  "provider:hello": { req: { provider: ProviderId; url: string }; res: { ack: true } };
-  "reviews:due": {
-    req: { limit?: number };
-    res: { items: ReviewItem[]; totalDue: number; limit: number };
+  "provider:hello": {
+    req: { provider: ProviderId; url: string; username?: string | null };
+    res: { ack: true };
   };
-  "reviews:grade": { req: { slug: string; rating: ReviewRating }; res: { nextDue: number } };
+  /**
+   * Ask the background whether this tab should sync, and how far back.
+   *
+   * The background is the only thing that sees every tab, so it's the only place that can
+   * stop two open leetcode.com tabs from walking the same history at once, or from
+   * re-syncing on every single page navigation.
+   */
+  "sync:claim": {
+    req: { provider: ProviderId };
+    res: { mode: SyncMode | null; since: number };
+  };
+  /** Release the claim and record the outcome. Must follow every successful claim. */
+  "sync:completed": {
+    req: { provider: ProviderId; mode: SyncMode; error?: string | null };
+    res: { ok: true };
+  };
+  "reviews:due": {
+    req: { track: TrackId; limit?: number };
+    res: { items: ReviewItem[]; totalDue: number; limit: number; track: TrackId };
+  };
+  "reviews:grade": {
+    req: { track: TrackId; slug: string; rating: ReviewRating };
+    res: { nextDue: number };
+  };
   "settings:get": { req: Record<string, never>; res: Settings };
   "settings:update": { req: { patch: Partial<Settings> }; res: Settings };
   /**
@@ -71,8 +116,8 @@ export interface MessageMap {
   "data:changed": { req: Record<string, never>; res: { ok: true } };
   /** Wipe everything and start over. Settings are kept unless `settings` is true. */
   "data:reset": { req: { settings?: boolean }; res: { ok: true } };
-  /** Re-apply the seeding strategy to cards that have never been graded. */
-  "schedule:rebuild": { req: Record<string, never>; res: { rebuilt: number; kept: number } };
+  /** Re-apply one track's seeding strategy to its cards that have never been graded. */
+  "schedule:rebuild": { req: { track: TrackId }; res: { rebuilt: number; kept: number } };
 }
 
 export type MessageType = keyof MessageMap;

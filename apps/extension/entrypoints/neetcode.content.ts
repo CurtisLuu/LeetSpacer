@@ -44,7 +44,9 @@ function ingest(raw: unknown, source: string): void {
   lastSent = fingerprint;
 
   const events = completedToEvents(completed, Date.now());
-  void send("events:ingest", { provider: "neetcode", events })
+  // NeetCode hands over the whole completed set every time, so any successful read is a
+  // full sync — there is no such thing as a NeetCode delta.
+  void send("events:ingest", { provider: "neetcode", events, complete: true })
     .then((result) => {
       console.debug(`[lcs] ${source}: ${completed.length} completed, ${result.inserted} new`);
     })

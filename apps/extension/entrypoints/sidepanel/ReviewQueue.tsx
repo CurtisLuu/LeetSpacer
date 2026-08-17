@@ -1,4 +1,4 @@
-import type { ReviewRating } from "@lcs/core";
+import type { ReviewRating, TrackId } from "@lcs/core";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -12,13 +12,14 @@ import {
   GradeButtons,
   Meter,
   Section,
+  TRACK_LABELS,
   Tooltip,
   TopicChip,
 } from "../../components/ui";
 import { relativeDays } from "../../lib/format";
 import { type ReviewItem, send } from "../../lib/messaging";
 
-export function ReviewQueue() {
+export function ReviewQueue({ track }: { track: TrackId }) {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [totalDue, setTotalDue] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -29,14 +30,14 @@ export function ReviewQueue() {
 
   const refresh = useCallback(async () => {
     try {
-      const result = await send("reviews:due", {});
+      const result = await send("reviews:due", { track });
       setItems(result.items);
       setTotalDue(result.totalDue);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
-  }, []);
+  }, [track]);
 
   useEffect(() => {
     void refresh();
@@ -60,7 +61,7 @@ export function ReviewQueue() {
       setGrading(slug);
       setPendingRating(rating);
       try {
-        const { nextDue } = await send("reviews:grade", { slug, rating });
+        const { nextDue } = await send("reviews:grade", { track, slug, rating });
         // Drop it locally first so the row leaves immediately, then resync.
         setItems((current) => current.filter((item) => item.slug !== slug));
         setTotalDue((current) => Math.max(0, current - 1));
@@ -77,7 +78,7 @@ export function ReviewQueue() {
         setPendingRating(null);
       }
     },
-    [refresh],
+    [refresh, track],
   );
 
   if (error) {
@@ -99,8 +100,10 @@ export function ReviewQueue() {
             doneThisSession > 0
               ? `${doneThisSession} reviewed. The next batch comes due on its own.`
               : totalDue === 0
-                ? "Open neetcode.io/practice while signed in and your completed problems sync automatically."
-                : "You've hit today's review limit. Raise it in settings if you want more."
+                ? track === "leetcode"
+                  ? "Open leetcode.com while signed in and your submission history syncs automatically."
+                  : "Open neetcode.io/practice while signed in and your completed problems sync automatically."
+                : `You've hit today's review limit for the ${TRACK_LABELS[track]} track. Raise it in settings if you want more.`
           }
         />
       </Section>
@@ -136,7 +139,14 @@ export function ReviewQueue() {
           return (
             <Card as="li" key={item.slug} interactive className="group/row">
               <div className="flex min-w-0 items-start justify-between gap-2">
-                <Tooltip label="Open on LeetCode" align="start">
+                <Tooltip
+                  label={
+                    item.site === "neetcode"
+                      ? "Open on NeetCode"
+                      : "Open on LeetCode — NeetCode has no page for this one"
+                  }
+                  align="start"
+                >
                   <a
                     className="min-w-0 font-medium text-accent underline decoration-transparent underline-offset-2 transition-colors hover:decoration-current"
                     href={item.url}

@@ -10,6 +10,18 @@ export type ProviderId = "leetcode" | "neetcode";
 
 export const PROVIDER_IDS: readonly ProviderId[] = ["leetcode", "neetcode"];
 
+/**
+ * A practice track: one independent review schedule, chosen with the selector in the UI.
+ *
+ * Deliberately the same values as `ProviderId` — a track *is* a site you practise on, and
+ * inventing a parallel vocabulary would only mean mapping between two identical unions.
+ * The alias exists because the two mean different things: `ProviderId` answers "where did
+ * this fact come from", `TrackId` answers "which schedule does this belong to".
+ */
+export type TrackId = ProviderId;
+
+export const TRACK_IDS: readonly TrackId[] = ["leetcode", "neetcode"];
+
 export type Difficulty = "Easy" | "Medium" | "Hard";
 
 /** Unix milliseconds. Used everywhere rather than Date, so state is trivially serializable. */
@@ -72,6 +84,16 @@ export interface ProblemState {
   acceptedCount: number;
   /** Providers that have contributed evidence about this problem. */
   sources: ProviderId[];
+  /**
+   * Whether `lastSolvedAt` is a real solve date or just when we first heard about it.
+   *
+   * True only when a submission with its own timestamp said so. NeetCode reports *that* a
+   * problem is done and never when, and LeetCode's accepted-set backfill is dateless too,
+   * so both of those leave this false. Seeding reads it to decide whether a card's due
+   * date is trustworthy or needs redistributing — without it, a genuinely dated LeetCode
+   * card would get its real schedule thrown away and fanned across an arbitrary window.
+   */
+  hasDatedSolve: boolean;
   /** NeetCode-style per-list checkbox state, keyed by list id. */
   listChecked: Record<string, boolean>;
   updatedAt: Timestamp;
@@ -86,6 +108,7 @@ export function emptyProblemState(slug: string, at: Timestamp): ProblemState {
     attempts: 0,
     acceptedCount: 0,
     sources: [],
+    hasDatedSolve: false,
     listChecked: {},
     updatedAt: at,
   };
@@ -107,8 +130,15 @@ export type ReviewRating = (typeof Rating)[keyof typeof Rating];
 
 export type CardPhase = "new" | "learning" | "review" | "relearning";
 
-/** FSRS scheduling state for a solved problem. Only solved problems get cards. */
+/**
+ * FSRS scheduling state for a solved problem. Only solved problems get cards.
+ *
+ * Identified by `(track, slug)`, not `slug` alone: the two tracks schedule independently,
+ * so a problem you've done on both sites carries one card per track and grading it in one
+ * leaves the other where it was.
+ */
 export interface ReviewCard {
+  track: TrackId;
   slug: string;
   due: Timestamp;
   stability: number;
@@ -124,8 +154,9 @@ export interface ReviewCard {
 }
 
 export interface ReviewLog {
-  /** Deterministic: `${slug}:${reviewedAt}`. */
+  /** Deterministic: `${track}:${slug}:${reviewedAt}`. */
   id: string;
+  track: TrackId;
   slug: string;
   rating: ReviewRating;
   reviewedAt: Timestamp;
@@ -183,6 +214,16 @@ export type ProgressEventType = ProgressEvent["type"];
  * Build a deterministic event id. Two syncs that observe the same underlying fact
  * produce identical ids, so `EventStore.append` can dedupe on insert.
  */
+/**
+ * The identity of a card, flattened to a string.
+ *
+ * IndexedDB keys cards on the `[track, slug]` pair directly; this is for the places that
+ * need a single comparable value — Map keys, the in-memory store, React list keys.
+ */
+export function cardKey(track: TrackId, slug: string): string {
+  return `${track}:${slug}`;
+}
+
 export function eventId(
   provider: ProviderId,
   type: ProgressEventType,

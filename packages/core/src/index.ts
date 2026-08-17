@@ -7,4 +7,5 @@ export * from "./memory-store.js";
 export * from "./ingest.js";
 export * from "./scheduler.js";
 export * from "./seeding.js";
+export * from "./seed-cards.js";
 export * from "./snapshot.js";

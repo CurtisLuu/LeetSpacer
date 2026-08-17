@@ -1,7 +1,11 @@
-import type { ProviderId } from "./model.js";
+import type { ProviderId, TrackId } from "./model.js";
 import type { SeedStrategy } from "./seeding.js";
 
 export interface ProviderSettings {
+  /**
+   * Whether to read this site at all. Turning it off stops the sync but keeps everything
+   * already collected, so the track it feeds goes quiet rather than empty.
+   */
   enabled: boolean;
   /** Discovered from the site session, not entered by the user. */
   username: string | null;
@@ -24,9 +28,15 @@ export interface GithubSourceSettings {
   lastResult: string | null;
 }
 
-export interface Settings {
-  providers: Record<ProviderId, ProviderSettings>;
-  github: GithubSourceSettings;
+/**
+ * Everything that shapes one track's schedule.
+ *
+ * Held per track rather than globally because the two tracks are working different
+ * material at different sizes: a NeetCode track is a curriculum of a couple of hundred
+ * problems, a LeetCode track is your whole submission history. Pacing that suits one
+ * buries the other.
+ */
+export interface TrackSettings {
   /** Caps so a backlog can never bury the user. */
   dailyReviewLimit: number;
   dailyNewLimit: number;
@@ -35,8 +45,11 @@ export interface Settings {
   /** FSRS target retention, 0..1. Higher = more frequent reviews. */
   requestRetention: number;
   /**
-   * How a freshly imported backlog is scheduled. NeetCode carries no solve dates, so
-   * this decides whether everything is due at once or fanned out over a window.
+   * How a freshly imported backlog is scheduled.
+   *
+   * Only applies to problems with no real solve date. A LeetCode problem read from your
+   * submission history already has a genuine due date derived from when you solved it, and
+   * redistributing that would throw away the best information the system has.
    */
   seedStrategy: SeedStrategy;
   seedSpreadDays: number;
@@ -44,12 +57,35 @@ export interface Settings {
   preferredLists: string[];
 }
 
-export const DEFAULT_SETTINGS: Settings = {
-  providers: {
-    leetcode: { enabled: false, username: null, lastFullSyncAt: null, lastIncrementalSyncAt: null },
-    neetcode: { enabled: true, username: null, lastFullSyncAt: null, lastIncrementalSyncAt: null },
-  },
-  github: { repo: null, lastSyncAt: null, lastResult: null },
+export interface Settings {
+  /**
+   * Schema version of the *stored* settings, so a value that has gone stale can be
+   * corrected exactly once instead of on every read.
+   *
+   * This exists because merging stored settings over defaults is not enough on its own:
+   * a stored `false` beats a changed default forever, even when that `false` was never a
+   * choice the user made. See `migrateStored`.
+   */
+  settingsVersion: number;
+  providers: Record<ProviderId, ProviderSettings>;
+  github: GithubSourceSettings;
+  /** One independent schedule per track. */
+  tracks: Record<TrackId, TrackSettings>;
+  /** Which track the UI is currently showing. Set by the selector in the side panel. */
+  activeTrack: TrackId;
+  /**
+   * Which site a problem in the review queue opens on. NeetCode is the default because
+   * that's where its video explanation and editorial live. Problems NeetCode has no page
+   * for always fall back to LeetCode — see `@lcs/catalog`'s problem-links.
+   */
+  problemLinkTarget: ProviderId;
+}
+
+/**
+ * NeetCode: a fixed curriculum with no solve dates, so everything is seeded and a short
+ * window keeps the daily load steady.
+ */
+const NEETCODE_TRACK: TrackSettings = {
   dailyReviewLimit: 10,
   dailyNewLimit: 5,
   reviewMixRatio: 0.6,
@@ -60,18 +96,138 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 /**
+ * LeetCode: your full history, which is usually far larger and mostly carries real dates
+ * already. Only the dateless remainder gets seeded, and across a wider window so that
+ * remainder doesn't swamp the genuinely scheduled cards.
+ */
+const LEETCODE_TRACK: TrackSettings = {
+  dailyReviewLimit: 15,
+  dailyNewLimit: 5,
+  reviewMixRatio: 0.6,
+  requestRetention: 0.9,
+  seedStrategy: "spread",
+  seedSpreadDays: 30,
+  preferredLists: [],
+};
+
+/**
+ * 1 -> 2: `providers.leetcode.enabled` defaulted to `false` while the LeetCode adapter
+ * was deferred, and every settings write persisted that. There has never been a UI to
+ * change it, so a stored `false` carries no intent — it's a stale default, and leaving it
+ * in place means LeetCode silently never syncs on any install that predates the adapter.
+ */
+export const SETTINGS_VERSION = 2;
+
+export const DEFAULT_SETTINGS: Settings = {
+  settingsVersion: SETTINGS_VERSION,
+  providers: {
+    leetcode: { enabled: true, username: null, lastFullSyncAt: null, lastIncrementalSyncAt: null },
+    neetcode: { enabled: true, username: null, lastFullSyncAt: null, lastIncrementalSyncAt: null },
+  },
+  github: { repo: null, lastSyncAt: null, lastResult: null },
+  tracks: { leetcode: LEETCODE_TRACK, neetcode: NEETCODE_TRACK },
+  activeTrack: "neetcode",
+  problemLinkTarget: "neetcode",
+};
+
+/**
+ * Settings as they were before schedule options moved under `tracks`.
+ *
+ * Kept as a type rather than deleted because stored settings outlive the code that wrote
+ * them: an install that hasn't been opened since the split still has these at the top
+ * level, and silently resetting someone's tuned limits to defaults is not an upgrade.
+ */
+interface LegacyScheduleSettings {
+  dailyReviewLimit?: number;
+  dailyNewLimit?: number;
+  reviewMixRatio?: number;
+  requestRetention?: number;
+  seedStrategy?: SeedStrategy;
+  seedSpreadDays?: number;
+  preferredLists?: string[];
+}
+
+const LEGACY_KEYS = [
+  "dailyReviewLimit",
+  "dailyNewLimit",
+  "reviewMixRatio",
+  "requestRetention",
+  "seedStrategy",
+  "seedSpreadDays",
+  "preferredLists",
+] as const;
+
+/**
+ * Just the pre-split schedule fields, and only the ones actually present.
+ *
+ * Picked key by key rather than spread wholesale: the stored object also holds
+ * `providers`, `github`, `tracks` and friends, and spreading it into a track would graft
+ * every one of them onto every track — which then round-trips back into storage.
+ */
+function pickLegacy(source: LegacyScheduleSettings): Partial<TrackSettings> {
+  const picked: Record<string, unknown> = {};
+  for (const key of LEGACY_KEYS) {
+    if (source[key] !== undefined) picked[key] = source[key];
+  }
+  return picked as Partial<TrackSettings>;
+}
+
+function trackWithDefaults(
+  fallback: TrackSettings,
+  stored: Partial<TrackSettings> | undefined,
+  legacy: LegacyScheduleSettings,
+): TrackSettings {
+  // Precedence: what was stored for this track, then whatever the pre-split settings
+  // said, then this track's defaults.
+  const merged = { ...fallback, ...pickLegacy(legacy), ...stored };
+  return { ...merged, preferredLists: [...merged.preferredLists] };
+}
+
+/**
  * Merge stored settings over defaults so added fields don't break existing installs.
  * Always returns a fresh object — nothing here aliases DEFAULT_SETTINGS.
  */
-export function withDefaults(stored: Partial<Settings> | undefined): Settings {
+/**
+ * One-time corrections to values that have gone stale on disk.
+ *
+ * Runs before the merge, so a corrected value is treated as if it had been stored that
+ * way. Guarded on `settingsVersion` rather than applied unconditionally: once the user
+ * *can* change a setting, their choice has to survive, and a migration that ran on every
+ * read would keep undoing it.
+ */
+function migrateStored(stored: Partial<Settings>): Partial<Settings> {
+  const version = stored.settingsVersion ?? 1;
+  if (version >= SETTINGS_VERSION) return stored;
+
+  const providers = { ...stored.providers } as Settings["providers"] | undefined;
+  if (providers?.leetcode) {
+    // Never a user decision — there was no control for it — so a stored `false` here is
+    // only ever the old default, from when the adapter didn't exist.
+    providers.leetcode = { ...providers.leetcode, enabled: true };
+  }
+
+  return { ...stored, providers, settingsVersion: SETTINGS_VERSION };
+}
+
+export function withDefaults(raw: Partial<Settings> | undefined): Settings {
+  const stored = raw === undefined ? undefined : migrateStored(raw);
+  const legacy = (stored ?? {}) as LegacyScheduleSettings;
+
+  // Built field by field rather than spread over `stored`. A spread would copy the
+  // pre-split top-level keys straight back out again, and since every `update` writes the
+  // result back, they'd be re-saved forever after they stopped meaning anything.
   return {
-    ...DEFAULT_SETTINGS,
-    ...stored,
+    settingsVersion: SETTINGS_VERSION,
     providers: {
       leetcode: { ...DEFAULT_SETTINGS.providers.leetcode, ...stored?.providers?.leetcode },
       neetcode: { ...DEFAULT_SETTINGS.providers.neetcode, ...stored?.providers?.neetcode },
     },
     github: { ...DEFAULT_SETTINGS.github, ...stored?.github },
-    preferredLists: [...(stored?.preferredLists ?? DEFAULT_SETTINGS.preferredLists)],
+    tracks: {
+      leetcode: trackWithDefaults(LEETCODE_TRACK, stored?.tracks?.leetcode, legacy),
+      neetcode: trackWithDefaults(NEETCODE_TRACK, stored?.tracks?.neetcode, legacy),
+    },
+    activeTrack: stored?.activeTrack ?? DEFAULT_SETTINGS.activeTrack,
+    problemLinkTarget: stored?.problemLinkTarget ?? DEFAULT_SETTINGS.problemLinkTarget,
   };
 }

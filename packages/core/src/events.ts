@@ -52,14 +52,23 @@ export function applyEvent(state: ProblemState | undefined, ev: ProgressEvent): 
     ...base,
     listChecked: { ...base.listChecked },
     sources: withSource(base.sources, ev.provider),
+    // Defaulted rather than assumed present: states written before this field existed
+    // come back from storage without it.
+    hasDatedSolve: base.hasDatedSolve ?? false,
     updatedAt: Math.max(base.updatedAt, ev.observedAt),
   };
 
   switch (ev.type) {
     case "problem_solved": {
       next.status = raiseStatus(next.status, "solved");
-      next.firstSolvedAt = earliest(next.firstSolvedAt, ev.solvedAt);
-      next.lastSolvedAt = latest(next.lastSolvedAt, ev.solvedAt);
+      // This event type carries no real date — providers that can't report one set
+      // `solvedAt` to the moment they were read. So it may only fill a gap, never move a
+      // date a submission actually vouched for. Otherwise a NeetCode sync would drag a
+      // problem you solved last year forward to today and wipe out its real schedule.
+      if (!next.hasDatedSolve) {
+        next.firstSolvedAt = earliest(next.firstSolvedAt, ev.solvedAt);
+        next.lastSolvedAt = latest(next.lastSolvedAt, ev.solvedAt);
+      }
       break;
     }
 
@@ -73,8 +82,20 @@ export function applyEvent(state: ProblemState | undefined, ev: ProgressEvent): 
       if (ev.verdict === "accepted") {
         next.acceptedCount += 1;
         next.status = raiseStatus(next.status, "solved");
-        next.firstSolvedAt = earliest(next.firstSolvedAt, ev.submittedAt);
-        next.lastSolvedAt = latest(next.lastSolvedAt, ev.submittedAt);
+
+        if (next.hasDatedSolve) {
+          next.firstSolvedAt = earliest(next.firstSolvedAt, ev.submittedAt);
+          next.lastSolvedAt = latest(next.lastSolvedAt, ev.submittedAt);
+        } else {
+          // The first real date *replaces* whatever a dateless report guessed, rather
+          // than combining with it. Keeping the fold order-independent depends on this:
+          // a guess must lose to a fact whichever order the two arrive in.
+          next.firstSolvedAt = ev.submittedAt;
+          next.lastSolvedAt = ev.submittedAt;
+        }
+        // A submission carries its own timestamp, so this date is real. Only ever set
+        // true — a later dateless sighting of the same problem must not downgrade it.
+        next.hasDatedSolve = true;
       } else {
         next.status = raiseStatus(next.status, "attempted");
       }

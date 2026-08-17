@@ -10,7 +10,8 @@
   "scripts": {
     "build:data": "node --experimental-strip-types scripts/build-catalog.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:neetcode-map": "node --experimental-strip-types scripts/build-neetcode-map.ts"
   },
   "dependencies": {
     "@lcs/core": "workspace:*"

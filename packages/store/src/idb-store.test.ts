@@ -1,6 +1,13 @@
 import "fake-indexeddb/auto";
 
-import { type ProgressEvent, type ReviewCard, createMemoryStore, eventId, ingestEvents } from "@lcs/core";
+import {
+  type ProgressEvent,
+  type ReviewCard,
+  type TrackId,
+  createMemoryStore,
+  eventId,
+  ingestEvents,
+} from "@lcs/core";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createIdbStore, openLcsDb } from "./idb-store.js";
@@ -27,8 +34,9 @@ function submission(slug: string, at: number, verdict: "accepted" | "wrong_answe
   };
 }
 
-function card(slug: string, due: number): ReviewCard {
+function card(slug: string, due: number, track: TrackId = "neetcode"): ReviewCard {
   return {
+    track,
     slug,
     due,
     stability: 1,
@@ -75,29 +83,71 @@ describe("IndexedDB store", () => {
   it("returns due cards in due order, respecting the limit", async () => {
     await store.cards.put([card("c", T0 + 3 * DAY), card("a", T0 + DAY), card("b", T0 + 2 * DAY)]);
 
-    const due = await store.cards.due(T0 + 2 * DAY);
+    const due = await store.cards.due("neetcode", T0 + 2 * DAY);
     expect(due.map((c) => c.slug)).toEqual(["a", "b"]);
 
-    const capped = await store.cards.due(T0 + 10 * DAY, 2);
+    const capped = await store.cards.due("neetcode", T0 + 10 * DAY, 2);
     expect(capped.map((c) => c.slug)).toEqual(["a", "b"]);
   });
 
-  it("round-trips settings with defaults filled in", async () => {
-    const updated = await store.settings.update({ seedSpreadDays: 30, dailyNewLimit: 3 });
+  it("keeps the two tracks' schedules apart", async () => {
+    // The same problem in both tracks: independent cards, independent due dates.
+    await store.cards.put([
+      card("two-sum", T0 + DAY, "neetcode"),
+      card("two-sum", T0 + 9 * DAY, "leetcode"),
+      card("3sum", T0 + DAY, "leetcode"),
+    ]);
 
-    expect(updated.seedSpreadDays).toBe(30);
-    expect(updated.dailyNewLimit).toBe(3);
-    // Untouched fields keep their defaults.
-    expect(updated.requestRetention).toBe(0.9);
-    expect((await store.settings.get()).seedSpreadDays).toBe(30);
+    const neetcode = await store.cards.due("neetcode", T0 + 2 * DAY);
+    expect(neetcode.map((c) => c.slug)).toEqual(["two-sum"]);
+
+    // The LeetCode copy of two-sum isn't due yet, and 3sum isn't in the NeetCode track.
+    const leetcode = await store.cards.due("leetcode", T0 + 2 * DAY);
+    expect(leetcode.map((c) => c.slug)).toEqual(["3sum"]);
+
+    expect(await store.cards.get("leetcode", "two-sum")).toMatchObject({ due: T0 + 9 * DAY });
+    expect(await store.cards.get("neetcode", "two-sum")).toMatchObject({ due: T0 + DAY });
+    expect(await store.cards.get("leetcode", "climbing-stairs")).toBeUndefined();
+  });
+
+  it("removes a card from one track without touching the other", async () => {
+    await store.cards.put([
+      card("two-sum", T0 + DAY, "neetcode"),
+      card("two-sum", T0 + DAY, "leetcode"),
+    ]);
+
+    await store.cards.remove("neetcode", "two-sum");
+
+    expect(await store.cards.get("neetcode", "two-sum")).toBeUndefined();
+    expect(await store.cards.get("leetcode", "two-sum")).toBeDefined();
+    expect(await store.cards.all()).toHaveLength(1);
+    expect(await store.cards.all("leetcode")).toHaveLength(1);
+  });
+
+  it("round-trips settings with defaults filled in", async () => {
+    const current = await store.settings.get();
+    const updated = await store.settings.update({
+      tracks: {
+        ...current.tracks,
+        neetcode: { ...current.tracks.neetcode, seedSpreadDays: 21, dailyNewLimit: 3 },
+      },
+    });
+
+    expect(updated.tracks.neetcode.seedSpreadDays).toBe(21);
+    expect(updated.tracks.neetcode.dailyNewLimit).toBe(3);
+    // Untouched fields keep their defaults...
+    expect(updated.tracks.neetcode.requestRetention).toBe(0.9);
+    // ...and so does the whole of the other track. Tuning one must not move the other.
+    expect(updated.tracks.leetcode).toEqual(current.tracks.leetcode);
+    expect((await store.settings.get()).tracks.neetcode.seedSpreadDays).toBe(21);
   });
 
   it("keeps meta keys separate from settings", async () => {
     await store.meta.set("leetcode:cursor", 12345);
-    await store.settings.update({ seedSpreadDays: 21 });
+    await store.settings.update({ activeTrack: "leetcode" });
 
     expect(await store.meta.get<number>("leetcode:cursor")).toBe(12345);
-    expect((await store.settings.get()).seedSpreadDays).toBe(21);
+    expect((await store.settings.get()).activeTrack).toBe("leetcode");
   });
 
   it("exports and re-imports a snapshot without loss", async () => {
@@ -147,12 +197,12 @@ describe("IndexedDB store", () => {
 
   it("clears everything", async () => {
     await ingestEvents(store, SAMPLE);
-    await store.settings.update({ seedSpreadDays: 7 });
+    await store.settings.update({ activeTrack: "leetcode" });
 
     await store.clear();
 
     expect(await store.events.count()).toBe(0);
     expect(await store.problems.all()).toEqual([]);
-    expect((await store.settings.get()).seedSpreadDays).toBe(14);
+    expect((await store.settings.get()).activeTrack).toBe("neetcode");
   });
 });
