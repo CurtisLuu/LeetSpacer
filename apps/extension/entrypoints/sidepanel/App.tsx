@@ -9,9 +9,9 @@ import {
   Tooltip,
   TrackSwitcher,
 } from "../../components/ui";
+import { openProblems } from "../../lib/pages";
 import { useStatus } from "../../lib/use-status";
 import { useTrack } from "../../lib/use-track";
-import { AllProblems } from "./AllProblems";
 import { ReviewQueue } from "./ReviewQueue";
 
 export function App() {
@@ -52,9 +52,15 @@ export function App() {
       {/* Keyed on the track so switching remounts the queue rather than showing the
           previous track's rows while the new ones load. */}
       {track ? <ReviewQueue key={track} track={track} /> : null}
-      {track ? <AllProblems key={`all-${track}`} track={track} /> : null}
 
-      <Section title={track ? `${TRACK_LABELS[track]} track` : "Collected"}>
+      <Section
+        title={track ? `${TRACK_LABELS[track]} track` : "Collected"}
+        action={
+          <Button variant="ghost" size="sm" onClick={openProblems}>
+            Browse all
+          </Button>
+        }
+      >
         <div className="grid grid-cols-3 gap-2">
           <Tooltip label="Problems with a review card in this track" align="start">
             <Stat label="Tracked" value={stats?.tracked ?? "—"} tone="accent" className="w-full" />

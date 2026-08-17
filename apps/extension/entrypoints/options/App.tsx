@@ -19,7 +19,7 @@ import {
 } from "../../components/ui";
 import { send } from "../../lib/messaging";
 import { getStore } from "../../lib/store";
-import { openWelcome } from "../../lib/welcome";
+import { openWelcome } from "../../lib/pages";
 
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);

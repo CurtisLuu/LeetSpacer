@@ -18,7 +18,7 @@ import {
 } from "../../components/ui";
 import { formatCountdown, relativeDays } from "../../lib/format";
 import { type ReviewItem, send } from "../../lib/messaging";
-import { openWelcome } from "../../lib/welcome";
+import { openWelcome } from "../../lib/pages";
 
 export function ReviewQueue({ track }: { track: TrackId }) {
   /** Everything the background last returned, batch member or not. */
