@@ -93,11 +93,29 @@ export function installNetworkObserver(provider: ProviderId, urlFilter: RegExp):
   const OriginalXHR = window.XMLHttpRequest;
   const openMethod = OriginalXHR.prototype.open;
   const sendMethod = OriginalXHR.prototype.send;
+  const setHeaderMethod = OriginalXHR.prototype.setRequestHeader;
 
   interface TrackedXHR extends XMLHttpRequest {
     __lcsUrl?: string;
     __lcsMethod?: string;
+    __lcsAuth?: string;
   }
+
+  // Headers have to be caught as they're set — an XHR exposes no way to read them back.
+  // Angular's HttpClient uses XHR rather than fetch, so without this the bearer token on
+  // NeetCode's own calls goes past unseen and the history walk has nothing to borrow.
+  OriginalXHR.prototype.setRequestHeader = function patchedSetHeader(
+    this: TrackedXHR,
+    name: string,
+    value: string,
+  ) {
+    try {
+      if (name.toLowerCase() === "authorization") this.__lcsAuth = String(value);
+    } catch {
+      // ignore
+    }
+    return (setHeaderMethod as (...a: unknown[]) => void).apply(this, [name, value]);
+  } as typeof setHeaderMethod;
 
   OriginalXHR.prototype.open = function patchedOpen(
     this: TrackedXHR,
@@ -132,6 +150,7 @@ export function installNetworkObserver(provider: ProviderId, urlFilter: RegExp):
               status: this.status,
               requestBody,
               responseBody,
+              authorization: this.__lcsAuth ?? "",
               observedAt: Date.now(),
             });
           } catch {

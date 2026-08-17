@@ -37,6 +37,9 @@ import { isPageObservation } from "../lib/page-bridge.js";
  */
 let observedToken: string | null = null;
 
+/** Relayed requests seen so far, to tell a dead bridge from an unseen header. */
+let observedCalls = 0;
+
 /** Resolves once the page has made an authenticated call we could learn from. */
 function waitForSession(signal: AbortSignal): Promise<boolean> {
   if (observedToken) return Promise.resolve(true);
@@ -99,11 +102,14 @@ async function syncActivity(signal: AbortSignal): Promise<void> {
   console.info(`[lcs] neetcode: ${mode} activity sync starting, waiting for the page…`);
 
   if (!(await waitForSession(signal))) {
-    await send("sync:completed", {
-      provider: "neetcode",
-      mode,
-      error: "Not signed in to neetcode.io — only completed problems could be read.",
-    }).catch(() => {});
+    // The two failures look identical from the outside and have nothing in common, so
+    // the count goes in the message rather than leaving it to be guessed at.
+    const error =
+      observedCalls === 0
+        ? "Saw no NeetCode API calls — only completed problems could be read."
+        : `Saw ${observedCalls} NeetCode API calls but no auth header — only completed problems could be read.`;
+    await send("sync:completed", { provider: "neetcode", mode, error }).catch(() => {});
+    console.warn(`[lcs] ${error}`);
     return;
   }
 
@@ -190,7 +196,11 @@ function watchForProgress(): void {
     if (!isPageObservation(event.data)) return;
 
     const observation = event.data;
-    if (observation.authorization) observedToken = observation.authorization;
+    observedCalls += 1;
+    if (observation.authorization && !observedToken) {
+      observedToken = observation.authorization;
+      console.info("[lcs] neetcode: session token observed");
+    }
 
     if (!isCompletedProblemsCall(observation.requestBody)) return;
 
