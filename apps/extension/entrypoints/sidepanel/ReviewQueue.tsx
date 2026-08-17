@@ -16,7 +16,7 @@ import {
   Tooltip,
   TopicChip,
 } from "../../components/ui";
-import { relativeDays } from "../../lib/format";
+import { formatCountdown, relativeDays } from "../../lib/format";
 import { type ReviewItem, send } from "../../lib/messaging";
 import { openWelcome } from "../../lib/welcome";
 
@@ -51,6 +51,14 @@ export function ReviewQueue({ track }: { track: TrackId }) {
   const requested = useRef<number | null>(null);
   const [doneThisSession, setDoneThisSession] = useState(0);
   const [reviewedToday, setReviewedToday] = useState(0);
+  /** The card just graded and when it returns, so a short interval isn't a surprise. */
+  const [lastGraded, setLastGraded] = useState<{ title: string; due: number } | null>(null);
+
+  /** Title of a slug from whatever the last fetch returned, falling back to the slug. */
+  const titleOf = useCallback(
+    (slug: string) => fetched.find((item) => item.slug === slug)?.title ?? slug,
+    [fetched],
+  );
 
   const load = useCallback(
     async (adopt: boolean, limit?: number) => {
@@ -119,6 +127,7 @@ export function ReviewQueue({ track }: { track: TrackId }) {
       setPendingRating(rating);
       try {
         const { nextDue } = await send("reviews:grade", { track, slug, rating });
+        setLastGraded({ title: titleOf(slug), due: nextDue });
         // Out of the batch for good. Rating something Again reschedules it minutes away,
         // and having it reappear underneath you is the behaviour this batch exists to stop.
         setBatch((current) => current.filter((s) => s !== slug));
@@ -136,7 +145,7 @@ export function ReviewQueue({ track }: { track: TrackId }) {
         setPendingRating(null);
       }
     },
-    [load, track],
+    [load, titleOf, track],
   );
 
   // The batch, in the order it was taken, dropping anything no longer due.
@@ -172,6 +181,14 @@ export function ReviewQueue({ track }: { track: TrackId }) {
     />
   );
 
+  const returning =
+    lastGraded !== null && lastGraded.due > Date.now() ? (
+      <Callout tone="neutral" className="mb-2">
+        <span className="truncate">{lastGraded.title}</span> comes back in{" "}
+        <strong className="font-medium">{formatCountdown(lastGraded.due - Date.now())}</strong>.
+      </Callout>
+    ) : null;
+
   const more =
     remaining > 0 ? (
       <Button variant="secondary" size="sm" onClick={() => void loadMore()}>
@@ -197,6 +214,7 @@ export function ReviewQueue({ track }: { track: TrackId }) {
     return (
       <Section title="Today" description={note || undefined}>
         {reviewedToday > 0 ? dayBar : null}
+        {returning}
         <Empty
           title={
             doneThisSession > 0 ? "Batch done" : nothingTracked ? "Nothing here yet" : "Nothing due"
@@ -242,6 +260,7 @@ export function ReviewQueue({ track }: { track: TrackId }) {
       }
     >
       {dayBar}
+      {returning}
 
       <ul className="space-y-2">
         {items.map((item) => {

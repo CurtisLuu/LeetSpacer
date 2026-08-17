@@ -11,6 +11,7 @@ import {
 } from "../../components/ui";
 import { useStatus } from "../../lib/use-status";
 import { useTrack } from "../../lib/use-track";
+import { AllProblems } from "./AllProblems";
 import { ReviewQueue } from "./ReviewQueue";
 
 export function App() {
@@ -51,6 +52,7 @@ export function App() {
       {/* Keyed on the track so switching remounts the queue rather than showing the
           previous track's rows while the new ones load. */}
       {track ? <ReviewQueue key={track} track={track} /> : null}
+      {track ? <AllProblems key={`all-${track}`} track={track} /> : null}
 
       <Section title={track ? `${TRACK_LABELS[track]} track` : "Collected"}>
         <div className="grid grid-cols-3 gap-2">

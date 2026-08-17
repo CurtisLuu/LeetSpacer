@@ -187,34 +187,8 @@ export default defineBackground(() => {
       const cap = limit ?? settings.tracks[track].dailyReviewLimit;
       // Most overdue first — those are the ones closest to being forgotten.
       const selected = [...allDue].sort((a, b) => a.due - b.due).slice(0, cap);
-      const states = await store.problems.getMany(selected.map((card) => card.slug));
-      const byslug = new Map(states.map((state) => [state.slug, state]));
 
-      // Slugs are LeetCode titleSlugs, so the bundled catalog resolves real titles,
-      // difficulty, and tags. Falls back gracefully for anything not in it.
-      const [catalog, links] = await Promise.all([
-        getCatalog().catch(() => null),
-        getProblemLinks(),
-      ]);
-
-      const items: ReviewItem[] = selected.map((card) => {
-        const state = byslug.get(card.slug);
-        const problem = catalog?.bySlug(card.slug);
-        const link = links.resolve(card.slug, settings.problemLinkTarget);
-        return {
-          slug: card.slug,
-          title: problem?.title ?? titleFromSlug(card.slug),
-          due: card.due,
-          overdueDays: (now - card.due) / MS_PER_DAY,
-          attempts: state?.attempts ?? 0,
-          lastSolvedAt: state?.lastSolvedAt ?? null,
-          reps: card.reps,
-          difficulty: problem?.difficulty ?? null,
-          topicTags: problem?.topicTags.slice(0, 2) ?? [],
-          url: link.href,
-          site: link.site,
-        };
-      });
+      const items = await toReviewItems(selected, settings.problemLinkTarget, now);
 
       return {
         items,
@@ -225,6 +199,20 @@ export default defineBackground(() => {
         nextDueAt,
         reviewedToday: todaysLogs.filter((log) => log.track === track).length,
       };
+    },
+
+    "reviews:all": async ({ track }) => {
+      const store = await getStore();
+      const now = Date.now();
+      const [settings, cards] = await Promise.all([
+        store.settings.get(),
+        store.cards.all(track),
+      ]);
+
+      // Soonest first, so the ones about to unlock are at the top where a countdown is
+      // worth reading.
+      const sorted = [...cards].sort((a, b) => a.due - b.due);
+      return { items: await toReviewItems(sorted, settings.problemLinkTarget, now), track };
     },
 
     "data:changed": async () => {
@@ -283,6 +271,46 @@ export default defineBackground(() => {
     },
   });
 });
+
+/**
+ * Flatten cards into the shape the panel renders, resolving titles, difficulty and the
+ * outbound link.
+ *
+ * Shared by the queue and the browse list so the two can't drift — a problem that reads
+ * one way in the queue and another in the list is worse than either.
+ */
+async function toReviewItems(
+  cards: readonly ReviewCard[],
+  linkTarget: ProviderId,
+  now: number,
+): Promise<ReviewItem[]> {
+  const store = await getStore();
+  const states = await store.problems.getMany(cards.map((card) => card.slug));
+  const byslug = new Map(states.map((state) => [state.slug, state]));
+
+  // Slugs are LeetCode titleSlugs, so the bundled catalog resolves real titles,
+  // difficulty, and tags. Falls back gracefully for anything not in it.
+  const [catalog, links] = await Promise.all([getCatalog().catch(() => null), getProblemLinks()]);
+
+  return cards.map((card) => {
+    const state = byslug.get(card.slug);
+    const problem = catalog?.bySlug(card.slug);
+    const link = links.resolve(card.slug, linkTarget);
+    return {
+      slug: card.slug,
+      title: problem?.title ?? titleFromSlug(card.slug),
+      due: card.due,
+      overdueDays: (now - card.due) / MS_PER_DAY,
+      attempts: state?.attempts ?? 0,
+      lastSolvedAt: state?.lastSolvedAt ?? null,
+      reps: card.reps,
+      difficulty: problem?.difficulty ?? null,
+      topicTags: problem?.topicTags.slice(0, 2) ?? [],
+      url: link.href,
+      site: link.site,
+    };
+  });
+}
 
 /** Update one provider's settings without disturbing the other's. */
 async function patchProvider(

@@ -125,6 +125,17 @@ export interface MessageMap {
       reviewedToday: number;
     };
   };
+  /**
+   * Every card in a track, soonest-due first — the browse list.
+   *
+   * Separate from `reviews:due` because it is not polled: it is fetched when the list is
+   * opened, and an account with thousands of cards shouldn't ship all of them every five
+   * seconds to render a queue of ten.
+   */
+  "reviews:all": {
+    req: { track: TrackId };
+    res: { items: ReviewItem[]; track: TrackId };
+  };
   "reviews:grade": {
     req: { track: TrackId; slug: string; rating: ReviewRating };
     res: { nextDue: number };
