@@ -16,6 +16,7 @@ import {
   type StoreSnapshot,
   type Timestamp,
   DEFAULT_SETTINGS,
+  SETTINGS_VERSION,
   createScheduler,
   eventId,
   foldEvents,
@@ -161,6 +162,10 @@ export function buildSnapshot(
     cards,
     logs: [],
     settings: withDefaults({
+      // Stamped as current, or `withDefaults` treats these as settings from an old
+      // install and runs its migrations over them — one of which clears the very cursor
+      // being set two lines down.
+      settingsVersion: SETTINGS_VERSION,
       providers: {
         ...DEFAULT_SETTINGS.providers,
         neetcode: {
