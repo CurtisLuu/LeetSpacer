@@ -61,21 +61,14 @@ export function App() {
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-10 text-sm">
-      <header className="mb-8">
-        <div className="mb-3 flex items-center gap-3">
-          <Logo className="size-11" />
-          <div>
-            <h1>
-              <Wordmark className="text-2xl" />
-            </h1>
-            <p className="text-xs text-ink-subtle">spaced repetition for leetcode</p>
-          </div>
+      <header className="mb-7 flex items-center gap-3">
+        <Logo className="size-11" />
+        <div>
+          <h1>
+            <Wordmark className="text-2xl" />
+          </h1>
+          <p className="text-xs text-ink-subtle">spaced repetition for leetcode</p>
         </div>
-        <p className="text-base text-ink-muted">
-          Stop re-solving the problems you already know. LeetSpacer schedules reviews from
-          your own practice history, so each problem comes back just before you'd forget
-          it.
-        </p>
       </header>
 
       <ol className="space-y-4">
@@ -83,7 +76,7 @@ export function App() {
           n={1}
           title="Connect your history"
           done={anySynced}
-          body="Open either site while signed in. Your history syncs on its own — no button, no account, no API token."
+          body="Open either site while signed in. Your history syncs on its own."
         >
           <div className="grid gap-3 sm:grid-cols-2">
             {SOURCES.map((source) => {
@@ -185,30 +178,18 @@ export function App() {
         </Step>
       </ol>
 
-      <footer className="mt-8 border-t border-border pt-5 text-xs text-ink-subtle">
-        <p className="mb-1.5 font-medium text-ink-muted">
-          Everything stays on this device.
-        </p>
-        <p>
-          There is no server and no account. LeetSpacer reads your history from a script
-          running on leetcode.com and neetcode.io using the session you're already signed
-          in with — it never handles a password or a token, and nothing is transmitted
-          anywhere.{" "}
-          <a
-            className="text-accent underline underline-offset-2"
-            href="https://github.com/CurtisLuu/LeetSpacer/blob/main/PRIVACY.md"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Privacy policy
-          </a>
-          .
-        </p>
-        <p className="mt-2.5">
-          <Button variant="link" size="sm" onClick={() => void browser.runtime.openOptionsPage()}>
-            Settings
-          </Button>
-        </p>
+      <footer className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-4 text-xs">
+        <Button variant="link" size="sm" onClick={() => void browser.runtime.openOptionsPage()}>
+          Settings
+        </Button>
+        <a
+          className="text-accent underline underline-offset-2"
+          href="https://github.com/CurtisLuu/LeetSpacer/blob/main/PRIVACY.md"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Privacy policy
+        </a>
       </footer>
     </main>
   );
