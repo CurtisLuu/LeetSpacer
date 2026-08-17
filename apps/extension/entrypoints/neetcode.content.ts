@@ -9,7 +9,7 @@ import {
 } from "@lcs/providers";
 
 import { type SyncMode, send } from "../lib/messaging.js";
-import { createNeetcodeTransport } from "../lib/neetcode-transport.js";
+import { createNeetcodeTransport, waitForSession } from "../lib/neetcode-transport.js";
 import { isPageObservation } from "../lib/page-bridge.js";
 
 /**
@@ -38,9 +38,16 @@ export default defineContentScript({
   // document_start so the bridge listener exists before the page's load-time requests.
   runAt: "document_start",
   async main(ctx) {
-    await send("provider:hello", { provider: "neetcode", url: location.href }).catch(() => {});
-    watchForProgress();
-    await syncActivity(ctx.signal);
+    // Nothing in here may throw. WXT awaits `main`, and an escaping rejection takes the
+    // whole content script down — including the passive completed-set read, which works
+    // with or without any of the activity machinery.
+    try {
+      await send("provider:hello", { provider: "neetcode", url: location.href }).catch(() => {});
+      watchForProgress();
+      await syncActivity(ctx.signal);
+    } catch (cause) {
+      console.warn("[lcs] neetcode content script", cause);
+    }
   },
 });
 
@@ -55,6 +62,16 @@ async function syncActivity(signal: AbortSignal): Promise<void> {
   if (!claim?.mode) return;
 
   const mode: SyncMode = claim.mode;
+
+  // The page signs itself in after this script starts, so there is nothing to read yet.
+  if (!(await waitForSession(signal))) {
+    await send("sync:completed", {
+      provider: "neetcode",
+      mode,
+      error: "Not signed in to neetcode.io — only completed problems could be read.",
+    }).catch(() => {});
+    return;
+  }
 
   // Every submission is keyed through this, so an empty map would walk the whole history
   // and discard all of it. Better to stop and say why.

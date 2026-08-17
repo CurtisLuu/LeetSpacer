@@ -25,8 +25,27 @@ function idbRequest<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
+/**
+ * Does the page's Firebase database exist yet?
+ *
+ * Checked before opening, because `indexedDB.open` *creates* a database that isn't there.
+ * Creating one on someone else's origin is not ours to do, and an empty
+ * `firebaseLocalStorageDb` sitting where Firebase expects its own is a good way to break
+ * the page we're a guest on.
+ */
+async function tokenDbExists(): Promise<boolean> {
+  if (typeof indexedDB.databases !== "function") return false;
+  try {
+    return (await indexedDB.databases()).some((db) => db.name === TOKEN_DB);
+  } catch {
+    return false;
+  }
+}
+
 /** The signed-in user's ID token, or null when nobody is signed in. */
 async function readIdToken(): Promise<string | null> {
+  if (!(await tokenDbExists())) return null;
+
   try {
     const db = await idbRequest(indexedDB.open(TOKEN_DB) as unknown as IDBRequest<IDBDatabase>);
     if (!db.objectStoreNames.contains(TOKEN_STORE)) return null;
@@ -44,6 +63,23 @@ async function readIdToken(): Promise<string | null> {
     // path still works without it, so this is a downgrade rather than a failure.
   }
   return null;
+}
+
+/**
+ * Wait for the page to sign itself in.
+ *
+ * The content script starts at `document_start` — it has to, so the network observer is
+ * listening before the page's own load-time requests — but Firebase hasn't written a token
+ * by then. Without this the activity sync fails on every single page load, having never
+ * had a chance to succeed.
+ */
+export async function waitForSession(signal: AbortSignal): Promise<boolean> {
+  for (const delay of [0, 500, 1_500, 3_000, 6_000]) {
+    if (signal.aborted) return false;
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    if (await readIdToken()) return true;
+  }
+  return false;
 }
 
 export function createNeetcodeTransport(): NeetcodeTransport {
