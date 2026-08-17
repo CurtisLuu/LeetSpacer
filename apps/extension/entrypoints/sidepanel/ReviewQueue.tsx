@@ -22,10 +22,13 @@ import { type ReviewItem, send } from "../../lib/messaging";
 export function ReviewQueue({ track }: { track: TrackId }) {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [totalDue, setTotalDue] = useState(0);
+  const [scheduledAhead, setScheduledAhead] = useState(0);
+  const [nextDueAt, setNextDueAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [grading, setGrading] = useState<string | null>(null);
   const [pendingRating, setPendingRating] = useState<ReviewRating | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [limit, setLimit] = useState(0);
   const [doneThisSession, setDoneThisSession] = useState(0);
 
   const refresh = useCallback(async () => {
@@ -33,6 +36,9 @@ export function ReviewQueue({ track }: { track: TrackId }) {
       const result = await send("reviews:due", { track });
       setItems(result.items);
       setTotalDue(result.totalDue);
+      setScheduledAhead(result.scheduledAhead);
+      setLimit(result.limit);
+      setNextDueAt(result.nextDueAt);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -81,6 +87,15 @@ export function ReviewQueue({ track }: { track: TrackId }) {
     [refresh, track],
   );
 
+  // Says where the rest of the track went. Without it a queue of 3 out of 47 tracked
+  // problems reads as data loss rather than as pacing.
+  const ahead =
+    scheduledAhead > 0
+      ? `${scheduledAhead} more scheduled${
+          nextDueAt === null ? "" : `, next ${formatDueDate(nextDueAt)}`
+        }.`
+      : undefined;
+
   if (error) {
     return (
       <Section title="Today">
@@ -92,18 +107,26 @@ export function ReviewQueue({ track }: { track: TrackId }) {
   }
 
   if (items.length === 0) {
+    // "Nothing due" and "nothing here" are different states, and only the second one
+    // should send you off to sync something.
+    const nothingTracked = totalDue === 0 && scheduledAhead === 0;
+
     return (
-      <Section title="Today">
+      <Section title="Today" description={ahead}>
         <Empty
-          title={doneThisSession > 0 ? "Done for today" : totalDue === 0 ? "Nothing due" : "All caught up"}
+          title={
+            doneThisSession > 0 ? "Done for today" : nothingTracked ? "Nothing here yet" : "Nothing due"
+          }
           body={
             doneThisSession > 0
               ? `${doneThisSession} reviewed. The next batch comes due on its own.`
-              : totalDue === 0
+              : nothingTracked
                 ? track === "leetcode"
                   ? "Open leetcode.com while signed in and your submission history syncs automatically."
                   : "Open neetcode.io/practice while signed in and your completed problems sync automatically."
-                : `You've hit today's review limit for the ${TRACK_LABELS[track]} track. Raise it in settings if you want more.`
+                : totalDue === 0
+                  ? "Everything in this track is scheduled ahead. Nothing to do today."
+                  : `You've hit today's review limit for the ${TRACK_LABELS[track]} track. Raise it in settings if you want more.`
           }
         />
       </Section>
@@ -113,8 +136,12 @@ export function ReviewQueue({ track }: { track: TrackId }) {
   return (
     <Section
       title="Today"
+      description={ahead}
       badge={
-        <Tooltip label={`${totalDue} due in total, capped by your daily limit`} align="start">
+        <Tooltip
+          label={`${totalDue} due in total, capped to ${limit} a day in settings`}
+          align="start"
+        >
           <Badge tone="accent">
             {items.length} of {totalDue}
           </Badge>
@@ -217,4 +244,12 @@ export function ReviewQueue({ track }: { track: TrackId }) {
       </ul>
     </Section>
   );
+}
+
+/** "tomorrow" / "Thu" / "18 Aug" — whichever is shortest and still unambiguous. */
+function formatDueDate(at: number): string {
+  const days = Math.ceil((at - Date.now()) / 86_400_000);
+  if (days <= 1) return "tomorrow";
+  if (days < 7) return new Date(at).toLocaleDateString(undefined, { weekday: "long" });
+  return new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }

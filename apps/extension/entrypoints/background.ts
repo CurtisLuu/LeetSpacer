@@ -148,11 +148,22 @@ export default defineBackground(() => {
 
     "reviews:due": async ({ track, limit }) => {
       const store = await getStore();
-      const settings = await store.settings.get();
-      const allDue = await store.cards.due(track, Date.now());
+      const now = Date.now();
+      const [settings, allDue, allCards] = await Promise.all([
+        store.settings.get(),
+        store.cards.due(track, now),
+        store.cards.all(track),
+      ]);
+
+      // Everything seeded but not yet due. Mostly the dateless backfill, which the
+      // seeding strategy deliberately fans across a window instead of dumping at once.
+      const waiting = allCards.filter((card) => card.due > now);
+      const nextDueAt = waiting.reduce<number | null>(
+        (soonest, card) => (soonest === null ? card.due : Math.min(soonest, card.due)),
+        null,
+      );
 
       const cap = limit ?? settings.tracks[track].dailyReviewLimit;
-      const now = Date.now();
       // Most overdue first — those are the ones closest to being forgotten.
       const selected = [...allDue].sort((a, b) => a.due - b.due).slice(0, cap);
       const states = await store.problems.getMany(selected.map((card) => card.slug));
@@ -184,7 +195,14 @@ export default defineBackground(() => {
         };
       });
 
-      return { items, totalDue: allDue.length, limit: cap, track };
+      return {
+        items,
+        totalDue: allDue.length,
+        limit: cap,
+        track,
+        scheduledAhead: waiting.length,
+        nextDueAt,
+      };
     },
 
     "data:changed": async () => {

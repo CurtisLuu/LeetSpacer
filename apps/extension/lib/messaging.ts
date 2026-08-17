@@ -101,7 +101,21 @@ export interface MessageMap {
   };
   "reviews:due": {
     req: { track: TrackId; limit?: number };
-    res: { items: ReviewItem[]; totalDue: number; limit: number; track: TrackId };
+    res: {
+      items: ReviewItem[];
+      totalDue: number;
+      limit: number;
+      track: TrackId;
+      /**
+       * Cards in this track that exist but aren't due yet.
+       *
+       * Reported because a queue showing "3 of 18" out of 47 tracked problems looks like
+       * 29 went missing. They're seeded and waiting; the panel has to say so.
+       */
+      scheduledAhead: number;
+      /** When the next not-yet-due card comes up, or null if none are waiting. */
+      nextDueAt: number | null;
+    };
   };
   "reviews:grade": {
     req: { track: TrackId; slug: string; rating: ReviewRating };
