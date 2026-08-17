@@ -31,7 +31,7 @@ export default defineConfig({
       128: "/icons/128.png",
     },
 
-    homepage_url: "https://github.com/CurtisLuu/leetcode-spaced",
+    homepage_url: "https://github.com/CurtisLuu/LeetSpacer",
 
     // Deliberately small. `storage` for local state, `sidePanel` for the main UI,
     // `alarms` to schedule background syncs. No `tabs`, no `<all_urls>`, no remote code.

@@ -89,8 +89,8 @@ LeetSpacer reads your history from a script running on leetcode.com and neetcode
 the session you're already signed in with — it never handles a password or a token, and
 nothing is ever transmitted anywhere.
 
-Full policy: https://github.com/CurtisLuu/leetcode-spaced/blob/main/PRIVACY.md
-Source code: https://github.com/CurtisLuu/leetcode-spaced
+Full policy: https://github.com/CurtisLuu/LeetSpacer/blob/main/PRIVACY.md
+Source code: https://github.com/CurtisLuu/LeetSpacer
 ```
 
 ---
@@ -141,7 +141,7 @@ purpose, no use for creditworthiness or lending.
 **Privacy policy URL**
 
 ```
-https://github.com/CurtisLuu/leetcode-spaced/blob/main/PRIVACY.md
+https://github.com/CurtisLuu/LeetSpacer/blob/main/PRIVACY.md
 ```
 
 ---

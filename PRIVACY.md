@@ -83,4 +83,4 @@ date above will change. The file's full history is public in the repository.
 ## Contact
 
 Questions or concerns: open an issue at
-<https://github.com/CurtisLuu/leetcode-spaced/issues>.
+<https://github.com/CurtisLuu/LeetSpacer/issues>.
