@@ -99,8 +99,13 @@ const LEETCODE_TRACK: TrackSettings = {
  * was deferred, and every settings write persisted that. There has never been a UI to
  * change it, so a stored `false` carries no intent — it's a stale default, and leaving it
  * in place means LeetCode silently never syncs on any install that predates the adapter.
+ *
+ * 2 -> 3: NeetCode's sync cursor was set by the completed-set reads, which predate the
+ * submission-history walk by a long way. The two surfaces share one cursor, so the walk
+ * inherited a recent timestamp and only ever ran incrementally — fetching the last day and
+ * declaring the history done. Clearing the cursor buys exactly one full walk.
  */
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 
 export const DEFAULT_SETTINGS: Settings = {
   settingsVersion: SETTINGS_VERSION,
@@ -179,10 +184,22 @@ function migrateStored(stored: Partial<Settings>): Partial<Settings> {
   if (version >= SETTINGS_VERSION) return stored;
 
   const providers = { ...stored.providers } as Settings["providers"] | undefined;
-  if (providers?.leetcode) {
+
+  if (version < 2 && providers?.leetcode) {
     // Never a user decision — there was no control for it — so a stored `false` here is
     // only ever the old default, from when the adapter didn't exist.
     providers.leetcode = { ...providers.leetcode, enabled: true };
+  }
+
+  if (version < 3 && providers?.neetcode) {
+    // Cleared, not backdated: the walk needs to start from nothing to cover the history
+    // the completed-set reads never had dates for. Costs one full pass, then settles back
+    // to incremental on its own.
+    providers.neetcode = {
+      ...providers.neetcode,
+      lastFullSyncAt: null,
+      lastIncrementalSyncAt: null,
+    };
   }
 
   return { ...stored, providers, settingsVersion: SETTINGS_VERSION };
