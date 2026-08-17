@@ -58,6 +58,21 @@ export default defineBackground(() => {
     ?.setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error: unknown) => console.error("[lcs] side panel behavior", error));
 
+  // Open the walkthrough once, on install only.
+  //
+  // It earns the tab: LeetSpacer has nothing to show until history syncs, and history only
+  // syncs when you visit a site it reads — so an install with no instruction produces a
+  // panel that says "nothing here" and looks broken. Deliberately not on update, which
+  // would interrupt people who already know how it works.
+  //
+  // `tabs.create` needs no `tabs` permission; that one is only for reading tab contents.
+  browser.runtime.onInstalled.addListener((details) => {
+    if (details.reason !== "install") return;
+    void browser.tabs
+      .create({ url: browser.runtime.getURL("/welcome.html") })
+      .catch((error: unknown) => console.error("[lcs] welcome tab", error));
+  });
+
   browser.alarms.create(SYNC_ALARM, { periodInMinutes: SYNC_PERIOD_MINUTES });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== SYNC_ALARM) return;

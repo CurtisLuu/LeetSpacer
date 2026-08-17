@@ -18,6 +18,7 @@ import {
 } from "../../components/ui";
 import { relativeDays } from "../../lib/format";
 import { type ReviewItem, send } from "../../lib/messaging";
+import { openWelcome } from "../../lib/welcome";
 
 export function ReviewQueue({ track }: { track: TrackId }) {
   const [items, setItems] = useState<ReviewItem[]>([]);
@@ -127,6 +128,13 @@ export function ReviewQueue({ track }: { track: TrackId }) {
                 : totalDue === 0
                   ? "Everything in this track is scheduled ahead. Nothing to do today."
                   : `You've hit today's review limit for the ${TRACK_LABELS[track]} track. Raise it in settings if you want more.`
+          }
+          action={
+            nothingTracked ? (
+              <Button variant="secondary" size="sm" onClick={openWelcome}>
+                Getting started
+              </Button>
+            ) : undefined
           }
         />
       </Section>

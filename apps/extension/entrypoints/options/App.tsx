@@ -18,6 +18,7 @@ import {
 } from "../../components/ui";
 import { send } from "../../lib/messaging";
 import { getStore } from "../../lib/store";
+import { openWelcome } from "../../lib/welcome";
 
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -132,11 +133,16 @@ export function App() {
 
   return (
     <main className="mx-auto max-w-xl space-y-6 p-6 text-sm">
-      <header>
-        <h1 className="text-lg font-semibold">LeetSpacer</h1>
-        <p className="text-xs text-ink-muted">
-          All data is stored locally in this browser and is never sent anywhere.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-lg font-semibold">LeetSpacer</h1>
+          <p className="text-xs text-ink-muted">
+            All data is stored locally in this browser and is never sent anywhere.
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={openWelcome}>
+          Getting started
+        </Button>
       </header>
 
       <Section
