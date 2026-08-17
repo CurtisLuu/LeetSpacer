@@ -65,8 +65,15 @@ export function App() {
           >
             <Stat label="Solved" value={stats?.solved ?? "—"} tone="good" className="w-full" />
           </Tooltip>
-          <Tooltip label="Submissions recorded in the append-only log, across both tracks" align="end">
-            <Stat label="Events" value={status?.eventsRecorded ?? "—"} tone="info" className="w-full" />
+          <Tooltip
+            label={
+              track === "leetcode"
+                ? "Submissions LeetCode has contributed to the log"
+                : "Completions NeetCode has contributed to the log"
+            }
+            align="end"
+          >
+            <Stat label="Events" value={stats?.events ?? "—"} tone="info" className="w-full" />
           </Tooltip>
         </div>
       </Section>

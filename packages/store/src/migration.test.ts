@@ -89,6 +89,24 @@ async function seedLegacyDb(name: string) {
     source: "manual",
   });
 
+  await db.put("events", {
+    id: "leetcode:submission_result:two-sum:0:1",
+    type: "submission_result",
+    provider: "leetcode",
+    slug: "two-sum",
+    verdict: "accepted",
+    submittedAt: T0,
+    observedAt: T0,
+  });
+  await db.put("events", {
+    id: "neetcode:problem_solved:is-anagram:0:completed",
+    type: "problem_solved",
+    provider: "neetcode",
+    slug: "is-anagram",
+    solvedAt: T0,
+    observedAt: T0,
+  });
+
   await db.put("kv", { activeTrack: "leetcode" }, "settings");
   db.close();
   return name;
@@ -163,6 +181,16 @@ describe("upgrading a version 1 database", () => {
 
     expect(await store.problems.all()).toHaveLength(3);
     expect((await store.settings.get()).activeTrack).toBe("leetcode");
+    expect(await store.events.count()).toBe(2);
+  });
+
+  it("backfills the provider index over events that predate it", async () => {
+    // The index arrived in v3; rows written under v1 have to end up in it, or a
+    // per-provider count silently reports zero on every existing install.
+    const store = await migrated();
+
+    expect(await store.events.count("leetcode")).toBe(1);
+    expect(await store.events.count("neetcode")).toBe(1);
   });
 
   it("serves the migrated cards through a track-scoped due query", async () => {

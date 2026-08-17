@@ -13,8 +13,11 @@ export const DB_NAME = "leetcode-spaced";
  * v2 split reviews into per-track schedules: `cards` is now keyed on `[track, slug]`
  * instead of `slug`, and `logs` carries a track too. See `upgrade` in idb-store.ts for
  * how existing rows are moved across.
+ *
+ * v3 indexed `events` by provider, so a per-track event count doesn't mean loading the
+ * entire log on every status poll.
  */
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 /** Settings and sync cursors share one key-value store to keep the schema small. */
 export const SETTINGS_KEY = "settings";
@@ -24,7 +27,7 @@ export interface LcsDB extends DBSchema {
   events: {
     key: string;
     value: ProgressEvent;
-    indexes: { observedAt: number };
+    indexes: { observedAt: number; provider: string };
   };
   problems: {
     key: string;

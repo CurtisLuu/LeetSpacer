@@ -21,6 +21,7 @@ export function openLcsDb(name = DB_NAME): Promise<LcsDatabase> {
       if (!db.objectStoreNames.contains("events")) {
         const events = db.createObjectStore("events", { keyPath: "id" });
         events.createIndex("observedAt", "observedAt");
+        events.createIndex("provider", "provider");
       }
       if (!db.objectStoreNames.contains("problems")) {
         const problems = db.createObjectStore("problems", { keyPath: "slug" });
@@ -42,6 +43,13 @@ export function openLcsDb(name = DB_NAME): Promise<LcsDatabase> {
       // place, so the rows are read out, the stores rebuilt, and the rows written back
       // with a track attached. Everyone's schedules survive; only their address changes.
       if (oldVersion < 2) await migrateToTracks(db, tx);
+
+      // v3: the events store gained a provider index. Nothing moves — IndexedDB builds it
+      // over the existing rows inside this same transaction.
+      const events = tx.objectStore("events");
+      if (!events.indexNames.contains("provider")) {
+        events.createIndex("provider", "provider");
+      }
     },
   });
 }
@@ -133,8 +141,9 @@ export function createIdbStore(db: LcsDatabase): Store {
       async all() {
         return db.getAll("events");
       },
-      async count() {
-        return db.count("events");
+      async count(provider) {
+        if (provider === undefined) return db.count("events");
+        return db.countFromIndex("events", "provider", provider);
       },
       async remove(ids) {
         if (ids.length === 0) return 0;

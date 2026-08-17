@@ -73,6 +73,25 @@ describe("IndexedDB store", () => {
     expect(await store.events.count()).toBe(3);
   });
 
+  it("counts events per provider, and in total", async () => {
+    await store.events.append([
+      ...SAMPLE,
+      {
+        id: eventId("neetcode", "problem_solved", "two-sum", 0, "completed"),
+        type: "problem_solved",
+        provider: "neetcode",
+        slug: "two-sum",
+        solvedAt: T0,
+        observedAt: T0,
+      },
+    ]);
+
+    // The panel shows this next to two track-scoped numbers, so it has to be scoped too.
+    expect(await store.events.count("leetcode")).toBe(3);
+    expect(await store.events.count("neetcode")).toBe(1);
+    expect(await store.events.count()).toBe(4);
+  });
+
   it("queries events by observation time", async () => {
     await store.events.append(SAMPLE);
 

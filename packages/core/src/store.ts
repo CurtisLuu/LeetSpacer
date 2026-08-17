@@ -9,6 +9,7 @@
 import type {
   ProblemState,
   ProgressEvent,
+  ProviderId,
   ReviewCard,
   ReviewLog,
   Timestamp,
@@ -25,7 +26,8 @@ export interface EventStore {
   append(events: readonly ProgressEvent[]): Promise<ProgressEvent[]>;
   since(observedAfter: Timestamp): Promise<ProgressEvent[]>;
   all(): Promise<ProgressEvent[]>;
-  count(): Promise<number>;
+  /** Events from one provider, or every event when `provider` is omitted. */
+  count(provider?: ProviderId): Promise<number>;
   /**
    * Drop events by id. Needed because the log is the source of truth: deleting a problem
    * without deleting its events would resurrect it on the next rebuild.

@@ -45,6 +45,8 @@ export interface TrackStatus {
   /** Problems this track's provider says you've solved. */
   solved: number;
   due: number;
+  /** Submissions this track's provider has contributed to the log. */
+  events: number;
 }
 
 export interface SyncStatus {
@@ -55,7 +57,6 @@ export interface SyncStatus {
   /** Across every track — distinct problems, not the sum of the per-track counts. */
   problemsTracked: number;
   solved: number;
-  eventsRecorded: number;
   /** Reported by the background so UI surfaces never import the dataset itself. */
   catalog: { count: number; generatedAt: string | null };
 }

@@ -358,10 +358,9 @@ async function getCatalogStats(): Promise<{ count: number; generatedAt: string |
 async function buildStatus(): Promise<SyncStatus> {
   const store = await getStore();
   const now = Date.now();
-  const [settings, problems, eventsRecorded, catalog] = await Promise.all([
+  const [settings, problems, catalog] = await Promise.all([
     store.settings.get(),
     store.problems.all(),
-    store.events.count(),
     getCatalogStats(),
   ]);
 
@@ -378,14 +377,19 @@ async function buildStatus(): Promise<SyncStatus> {
   // waiting in the track you're not looking at.
   const tracks = {} as SyncStatus["tracks"];
   for (const track of TRACK_IDS) {
-    const [cards, due] = await Promise.all([
+    const [cards, due, events] = await Promise.all([
       store.cards.all(track),
       store.cards.due(track, now),
+      // Scoped to the provider that feeds this track. A combined total sitting between
+      // two track-scoped numbers reads as a bug, because it looks like one of the three
+      // is counting something else — which it was.
+      store.events.count(track),
     ]);
     tracks[track] = {
       tracked: cards.length,
       solved: problems.filter((p) => p.status === "solved" && p.sources.includes(track)).length,
       due: due.length,
+      events,
     };
   }
 
@@ -396,7 +400,6 @@ async function buildStatus(): Promise<SyncStatus> {
     activeTrack: settings.activeTrack,
     problemsTracked: problems.length,
     solved: problems.filter((p) => p.status === "solved").length,
-    eventsRecorded,
     catalog,
   };
 }
