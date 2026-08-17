@@ -8,7 +8,6 @@ import {
   parseCompletedProblems,
 } from "@lcs/providers";
 
-import { getProblemLinks } from "../lib/catalog.js";
 import { type SyncMode, send } from "../lib/messaging.js";
 import { createNeetcodeTransport } from "../lib/neetcode-transport.js";
 import { isPageObservation } from "../lib/page-bridge.js";
@@ -56,14 +55,27 @@ async function syncActivity(signal: AbortSignal): Promise<void> {
   if (!claim?.mode) return;
 
   const mode: SyncMode = claim.mode;
-  const links = await getProblemLinks();
-  const transport = createNeetcodeTransport();
 
+  // Every submission is keyed through this, so an empty map would walk the whole history
+  // and discard all of it. Better to stop and say why.
+  const { byNeetcodeSlug } = await send("catalog:neetcode-slugs", {}).catch(() => ({
+    byNeetcodeSlug: {},
+  }));
+  const slugs = new Map(Object.entries(byNeetcodeSlug));
+
+  if (slugs.size === 0) {
+    const error = "No NeetCode slug map — run pnpm neetcode:map and rebuild.";
+    await send("sync:completed", { provider: "neetcode", mode, error }).catch(() => {});
+    console.warn(`[lcs] ${error}`);
+    return;
+  }
+
+  const transport = createNeetcodeTransport();
   const syncCtx: NeetcodeSyncCtx = {
     now: () => Date.now(),
     signal,
     throttle: createThrottle(THROTTLE_MS, THROTTLE_JITTER_MS),
-    toLeetcodeSlug: (neetcodeSlug) => links.leetcodeSlug(neetcodeSlug),
+    toLeetcodeSlug: (neetcodeSlug) => slugs.get(neetcodeSlug) ?? null,
     onProgress: (update) => console.debug(`[lcs] neetcode ${update.phase}: ${update.fetched}`),
   };
 

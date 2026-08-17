@@ -136,6 +136,17 @@ export interface MessageMap {
     req: { track: TrackId };
     res: { items: ReviewItem[]; track: TrackId };
   };
+  /**
+   * The NeetCode -> LeetCode slug table.
+   *
+   * The NeetCode content script needs it to key submissions, and a content script can't
+   * fetch an extension asset unless it's declared web-accessible — which would hand the
+   * whole catalogue to any page on the origin. Cheaper and narrower to pass it over.
+   */
+  "catalog:neetcode-slugs": {
+    req: Record<string, never>;
+    res: { byNeetcodeSlug: Record<string, string> };
+  };
   "reviews:grade": {
     req: { track: TrackId; slug: string; rating: ReviewRating };
     res: { nextDue: number };

@@ -215,6 +215,10 @@ export default defineBackground(() => {
       return { items: await toReviewItems(sorted, track, settings.problemLinkTarget, now), track };
     },
 
+    "catalog:neetcode-slugs": async () => ({
+      byNeetcodeSlug: (await getProblemLinks()).neetcodeToLeetcode(),
+    }),
+
     "data:changed": async () => {
       await refreshBadge();
       return { ok: true } as const;

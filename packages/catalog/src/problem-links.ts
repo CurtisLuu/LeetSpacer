@@ -40,6 +40,14 @@ export interface ProblemLinks {
    * that lets those become events keyed the way everything else is.
    */
   leetcodeSlug(neetcodeSlug: string): string | null;
+  /**
+   * The whole NeetCode -> LeetCode table.
+   *
+   * For callers that can't reach the catalog themselves: a content script can't fetch an
+   * extension asset without making it web-accessible to the page, so the background hands
+   * this over instead.
+   */
+  neetcodeToLeetcode(): Record<string, string>;
   resolve(slug: string, prefer: ProviderId): ResolvedLink;
 }
 
@@ -65,6 +73,7 @@ export function createProblemLinks(data: NeetcodeSlugData): ProblemLinks {
     size: bySlug.size,
     neetcodeSlug,
     leetcodeSlug: (nc) => byNeetcodeSlug.get(nc) ?? null,
+    neetcodeToLeetcode: () => Object.fromEntries(byNeetcodeSlug),
     resolve(slug, prefer) {
       if (prefer === "neetcode") {
         const nc = neetcodeSlug(slug);
