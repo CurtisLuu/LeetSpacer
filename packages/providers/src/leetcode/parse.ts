@@ -20,6 +20,9 @@ import {
 } from "@lcs/core";
 
 import type { AuthState } from "../types.js";
+import { toVerdict } from "../verdict.js";
+
+export { toVerdict };
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -112,40 +115,6 @@ export function solvedToEvents(
 // ---------------------------------------------------------------------------
 // Submission history (the dated path)
 // ---------------------------------------------------------------------------
-
-/**
- * `status_display` is the field LeetCode's own UI renders, so it's the one that stays
- * stable across their backend changes. Numeric `status_code` is the fallback.
- */
-const VERDICT_BY_DISPLAY: Record<string, SubmissionVerdict> = {
-  accepted: "accepted",
-  "wrong answer": "wrong_answer",
-  "time limit exceeded": "time_limit_exceeded",
-  "memory limit exceeded": "memory_limit_exceeded",
-  "output limit exceeded": "other",
-  "runtime error": "runtime_error",
-  "compile error": "compile_error",
-};
-
-const VERDICT_BY_CODE: Record<number, SubmissionVerdict> = {
-  10: "accepted",
-  11: "wrong_answer",
-  12: "memory_limit_exceeded",
-  13: "other",
-  14: "time_limit_exceeded",
-  15: "runtime_error",
-  20: "compile_error",
-};
-
-export function toVerdict(display: unknown, code?: unknown): SubmissionVerdict {
-  const named = str(display);
-  if (named) {
-    const known = VERDICT_BY_DISPLAY[named.trim().toLowerCase()];
-    if (known) return known;
-  }
-  if (typeof code === "number") return VERDICT_BY_CODE[code] ?? "other";
-  return "other";
-}
 
 /**
  * Identity for a submission event.

@@ -33,6 +33,13 @@ export interface ProblemLinks {
   readonly size: number;
   /** NeetCode's slug for a LeetCode slug, or null when NeetCode doesn't host it. */
   neetcodeSlug(slug: string): string | null;
+  /**
+   * The reverse: LeetCode's slug for a NeetCode one.
+   *
+   * NeetCode's submission records identify problems by its own slug, so this is the join
+   * that lets those become events keyed the way everything else is.
+   */
+  leetcodeSlug(neetcodeSlug: string): string | null;
   resolve(slug: string, prefer: ProviderId): ResolvedLink;
 }
 
@@ -49,10 +56,15 @@ export function createProblemLinks(data: NeetcodeSlugData): ProblemLinks {
 
   const neetcodeSlug = (slug: string) => bySlug.get(slug) ?? null;
 
+  // Built once rather than scanned per lookup: a NeetCode sync translates a slug for
+  // every submission it reads, which is thousands of calls on a first sync.
+  const byNeetcodeSlug = new Map([...bySlug].map(([lc, nc]) => [nc, lc]));
+
   return {
     generatedAt: data.generatedAt ?? null,
     size: bySlug.size,
     neetcodeSlug,
+    leetcodeSlug: (nc) => byNeetcodeSlug.get(nc) ?? null,
     resolve(slug, prefer) {
       if (prefer === "neetcode") {
         const nc = neetcodeSlug(slug);

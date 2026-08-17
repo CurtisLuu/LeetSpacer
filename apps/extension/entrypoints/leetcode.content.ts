@@ -3,10 +3,8 @@ import {
   type SyncCtx,
   checkToEvent,
   createThrottle,
-  detectAuth,
-  fullSync,
-  incrementalSync,
   isSubmissionCheckUrl,
+  leetcodeSync,
   parseSubmissionCheck,
   slugFromProblemUrl,
   submissionIdFromCheckUrl,
@@ -47,7 +45,7 @@ export default defineContentScript({
     // submission landing while a slow sync is still running shouldn't be missed.
     watchForVerdicts();
 
-    const auth = await detectAuth(transport);
+    const auth = await leetcodeSync.detectAuth(transport);
     await send("provider:hello", {
       provider: "leetcode",
       url: location.href,
@@ -88,8 +86,8 @@ async function syncIfClaimed(
   try {
     const stream =
       mode === "full"
-        ? fullSync(transport, syncCtx)
-        : incrementalSync(transport, syncCtx, claim.since);
+        ? leetcodeSync.fullSync(transport, syncCtx)
+        : leetcodeSync.incrementalSync(transport, syncCtx, claim.since);
 
     // Persisted batch by batch, not at the end: a full history walk takes minutes, and
     // losing all of it because the tab closed at minute nine would be its own bug.

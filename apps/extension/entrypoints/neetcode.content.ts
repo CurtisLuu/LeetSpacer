@@ -1,11 +1,16 @@
 import {
   PROGRESS_CACHE_KEY,
+  type NeetcodeSyncCtx,
   completedToEvents,
+  createThrottle,
   isCompletedProblemsCall,
+  neetcodeSync,
   parseCompletedProblems,
 } from "@lcs/providers";
 
-import { send } from "../lib/messaging.js";
+import { getProblemLinks } from "../lib/catalog.js";
+import { type SyncMode, send } from "../lib/messaging.js";
+import { createNeetcodeTransport } from "../lib/neetcode-transport.js";
 import { isPageObservation } from "../lib/page-bridge.js";
 
 /**
@@ -13,21 +18,82 @@ import { isPageObservation } from "../lib/page-bridge.js";
  *
  * Reads which problems you've completed, from two places the page provides on its own:
  * the `getCompletedProblems` response it fetches on load, and the `synced-progress-cache`
- * it keeps in localStorage. We issue no requests and never handle an auth token — the
- * data is already there by the time this runs.
+ * it keeps in localStorage. Neither costs a request — the data is already there by the
+ * time this runs.
  *
  * Both surfaces identify problems by LeetCode URL, so everything downstream is keyed by
  * LeetCode slug and joins straight to the bundled catalog.
+ *
+ * On top of that passive read, it walks NeetCode's own activity history for the thing the
+ * completed set can't provide: per-submission dates and verdicts. That walk does issue
+ * requests and does use the page's Firebase token — see `lib/neetcode-transport.ts` for
+ * why there's no way around it and what the token is and isn't used for.
  */
+
+/** Spacing between round trips, matching the LeetCode walk. */
+const THROTTLE_MS = 1_100;
+const THROTTLE_JITTER_MS = 400;
+
 export default defineContentScript({
   matches: ["https://neetcode.io/*"],
   // document_start so the bridge listener exists before the page's load-time requests.
   runAt: "document_start",
-  async main() {
+  async main(ctx) {
     await send("provider:hello", { provider: "neetcode", url: location.href }).catch(() => {});
     watchForProgress();
+    await syncActivity(ctx.signal);
   },
 });
+
+/**
+ * Walk NeetCode's submission history.
+ *
+ * Claimed through the background like LeetCode's, so two open tabs don't both walk it and
+ * a failure doesn't retry on every page load.
+ */
+async function syncActivity(signal: AbortSignal): Promise<void> {
+  const claim = await send("sync:claim", { provider: "neetcode" }).catch(() => null);
+  if (!claim?.mode) return;
+
+  const mode: SyncMode = claim.mode;
+  const links = await getProblemLinks();
+  const transport = createNeetcodeTransport();
+
+  const syncCtx: NeetcodeSyncCtx = {
+    now: () => Date.now(),
+    signal,
+    throttle: createThrottle(THROTTLE_MS, THROTTLE_JITTER_MS),
+    toLeetcodeSlug: (neetcodeSlug) => links.leetcodeSlug(neetcodeSlug),
+    onProgress: (update) => console.debug(`[lcs] neetcode ${update.phase}: ${update.fetched}`),
+  };
+
+  let inserted = 0;
+  const touched = new Set<string>();
+
+  try {
+    const stream =
+      mode === "full"
+        ? neetcodeSync.fullSync(transport, syncCtx)
+        : neetcodeSync.incrementalSync(transport, syncCtx, claim.since);
+
+    for await (const events of stream) {
+      if (signal.aborted) break;
+      const result = await send("events:ingest", { provider: "neetcode", events });
+      inserted += result.inserted;
+      for (const slug of result.updatedProblems) touched.add(slug);
+    }
+
+    await send("sync:completed", { provider: "neetcode", mode });
+    console.debug(
+      `[lcs] neetcode ${mode} sync: ${inserted} new events across ${touched.size} problems`,
+    );
+  } catch (cause) {
+    const error = cause instanceof Error ? cause.message : String(cause);
+    // Not fatal: the completed set still keeps the track populated, just without dates.
+    await send("sync:completed", { provider: "neetcode", mode, error }).catch(() => {});
+    console.warn(`[lcs] neetcode ${mode} activity sync failed`, cause);
+  }
+}
 
 /** Slugs already sent this page-load, so navigating around doesn't re-send constantly. */
 let lastSent = "";
@@ -44,9 +110,9 @@ function ingest(raw: unknown, source: string): void {
   lastSent = fingerprint;
 
   const events = completedToEvents(completed, Date.now());
-  // NeetCode hands over the whole completed set every time, so any successful read is a
-  // full sync — there is no such thing as a NeetCode delta.
-  void send("events:ingest", { provider: "neetcode", events, complete: true })
+  // The completed set is the whole set every time, but it is no longer the only NeetCode
+  // path — the activity walk marks completion, so this one no longer claims to.
+  void send("events:ingest", { provider: "neetcode", events })
     .then((result) => {
       console.debug(`[lcs] ${source}: ${completed.length} completed, ${result.inserted} new`);
     })
