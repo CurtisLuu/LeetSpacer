@@ -202,10 +202,16 @@ Coverage on the account probed: 58 active days, 71 of its 77 completed problems,
 more than one submission. The remainder are problems ticked or solved elsewhere, which have
 no submission record and stay dateless.
 
-**This path does handle a credential**, which nothing else in the extension does. NeetCode
-authenticates with a Firebase ID token held in page-readable IndexedDB, and these endpoints
-cannot be called without it. It is read on demand, used same-origin only, and never stored
-or transmitted — see `lib/neetcode-transport.ts`.
+**This path does handle a credential**, which nothing else in the extension does. These
+are Firebase callables and take a bearer token.
+
+Do *not* read it from Firebase's IndexedDB. The stored copy expires hourly and is stale
+far more often than not — that produced an HTTP 401 on every sync — and opening that
+database creates it when absent, which is not ours to do on someone else's origin. The
+MAIN-world observer relays the `Authorization` header off the page's own callable requests
+instead; the page makes one on load, so the token used is by definition one that just
+worked. Held in memory for the life of the tab, never stored or transmitted. A 401
+mid-walk means it aged out, and the fix is to reload the page.
 
 ### Still unconfirmed
 

@@ -47,12 +47,12 @@ LeetSpacer never sees or stores a password, and transmits nothing anywhere.
 automatically — the same way a normal page load does. LeetCode's session cookie is marked
 `HttpOnly`, so it is not readable by extension code even in principle.
 
-**NeetCode.** NeetCode authenticates with a Firebase ID token rather than a cookie, and
-that token is readable by page scripts. Reading your submission history is not possible
-without it, so LeetSpacer reads it from the page's own storage on neetcode.io. It is read
-on demand, used only for requests back to neetcode.io, never written to LeetSpacer's
-storage, never included in an export, and never sent anywhere else. It is the same token
-NeetCode's own activity page attaches to the same calls.
+**NeetCode.** NeetCode authenticates with a short-lived bearer token rather than a cookie.
+Reading your submission history is not possible without one, so LeetSpacer reuses the
+token from a request neetcode.io has already made itself — it is observed in passing, not
+extracted from storage. It is held in memory for the life of the tab, used only for
+requests back to neetcode.io, never written to LeetSpacer's storage, never included in an
+export, and never sent anywhere else.
 
 If you would rather it did not, turn NeetCode off under Settings → Your history. The
 extension then reads nothing from the site at all.

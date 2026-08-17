@@ -9,7 +9,7 @@ import {
 } from "@lcs/providers";
 
 import { type SyncMode, send } from "../lib/messaging.js";
-import { createNeetcodeTransport, waitForSession } from "../lib/neetcode-transport.js";
+import { createNeetcodeTransport } from "../lib/neetcode-transport.js";
 import { isPageObservation } from "../lib/page-bridge.js";
 
 /**
@@ -28,6 +28,34 @@ import { isPageObservation } from "../lib/page-bridge.js";
  * requests and does use the page's Firebase token — see `lib/neetcode-transport.ts` for
  * why there's no way around it and what the token is and isn't used for.
  */
+
+/**
+ * The bearer token last seen on one of the page's own callable requests.
+ *
+ * Held here rather than read from Firebase's storage, where the stored copy expires hourly
+ * and is usually stale. Kept in memory only, for the life of the tab.
+ */
+let observedToken: string | null = null;
+
+/** Resolves once the page has made an authenticated call we could learn from. */
+function waitForSession(signal: AbortSignal): Promise<boolean> {
+  if (observedToken) return Promise.resolve(true);
+
+  return new Promise((resolve) => {
+    // The page fetches its completed set on load, so this normally lands within a second
+    // or two. The cap is for the signed-out case, where it never will.
+    const deadline = Date.now() + 20_000;
+    const timer = setInterval(() => {
+      if (observedToken) {
+        clearInterval(timer);
+        resolve(true);
+      } else if (signal.aborted || Date.now() > deadline) {
+        clearInterval(timer);
+        resolve(false);
+      }
+    }, 250);
+  });
+}
 
 /** Spacing between round trips, matching the LeetCode walk. */
 const THROTTLE_MS = 1_100;
@@ -63,7 +91,8 @@ async function syncActivity(signal: AbortSignal): Promise<void> {
 
   const mode: SyncMode = claim.mode;
 
-  // The page signs itself in after this script starts, so there is nothing to read yet.
+  // The page authenticates itself after this script starts, so there is nothing to
+  // borrow yet. Waits for it to make a call of its own.
   if (!(await waitForSession(signal))) {
     await send("sync:completed", {
       provider: "neetcode",
@@ -87,7 +116,7 @@ async function syncActivity(signal: AbortSignal): Promise<void> {
     return;
   }
 
-  const transport = createNeetcodeTransport();
+  const transport = createNeetcodeTransport(() => observedToken);
   const syncCtx: NeetcodeSyncCtx = {
     now: () => Date.now(),
     signal,
@@ -155,6 +184,8 @@ function watchForProgress(): void {
     if (!isPageObservation(event.data)) return;
 
     const observation = event.data;
+    if (observation.authorization) observedToken = observation.authorization;
+
     if (!isCompletedProblemsCall(observation.requestBody)) return;
 
     try {

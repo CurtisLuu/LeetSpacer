@@ -24,6 +24,14 @@ export interface PageObservation {
   requestBody: string;
   /** Response body, truncated. Empty when the body wasn't readable. */
   responseBody: string;
+  /**
+   * The request's `Authorization` header, when it carried one.
+   *
+   * Relayed because NeetCode's endpoints are Firebase callables: they take a bearer token
+   * that expires hourly, and the copy sitting in the page's storage is routinely stale.
+   * The one the page just used is by definition the one that works.
+   */
+  authorization?: string;
   observedAt: number;
 }
 
