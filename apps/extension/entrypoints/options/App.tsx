@@ -1,7 +1,7 @@
 import { type Settings, parseSnapshot } from "@lcs/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Section } from "../../components/ui";
+import { Button, Callout, InfoDot, Section, Tooltip } from "../../components/ui";
 import { send } from "../../lib/messaging";
 import { getStore } from "../../lib/store";
 
@@ -94,17 +94,17 @@ export function App() {
     <main className="mx-auto max-w-xl space-y-6 p-6 text-sm">
       <header>
         <h1 className="text-lg font-semibold">LeetCode Spaced</h1>
-        <p className="text-xs text-[--color-ink-muted]">
+        <p className="text-xs text-ink-muted">
           All data is stored locally in this browser and is never sent anywhere.
         </p>
       </header>
 
       <Section title="NeetCode history">
-        <div className="space-y-2 rounded-lg border border-[--color-border] bg-[--color-surface-raised] p-3">
-          <p className="text-xs text-[--color-ink-muted]">
+        <div className="space-y-2 rounded-lg border border-border bg-surface-raised p-3">
+          <p className="text-xs text-ink-muted">
             Open{" "}
             <a
-              className="text-[--color-accent] underline underline-offset-2"
+              className="text-accent underline underline-offset-2"
               href="https://neetcode.io/practice"
               target="_blank"
               rel="noreferrer"
@@ -114,7 +114,7 @@ export function App() {
             while signed in and your completed problems sync automatically — no button, no
             token. The page already knows what you've finished; the extension just reads it.
           </p>
-          <p className="text-xs text-[--color-ink-muted]">
+          <p className="text-xs text-ink-muted">
             Problems are identified by their LeetCode link, so titles, difficulty and topic
             tags come from the bundled catalogue.
           </p>
@@ -139,8 +139,9 @@ export function App() {
           />
         </div>
         <label className="block space-y-1">
-          <span className="block text-xs text-[--color-ink-muted]">
+          <span className="flex items-center gap-1.5 text-xs text-ink-muted">
             Target retention — {Math.round(settings.requestRetention * 100)}%
+            <InfoDot label="The share of reviews you want to get right. 90% is the usual balance; higher means seeing each problem more often." />
           </span>
           <input
             type="range"
@@ -151,8 +152,8 @@ export function App() {
             value={Math.round(settings.requestRetention * 100)}
             onChange={(e) => void patch({ requestRetention: Number(e.target.value) / 100 })}
           />
-          <span className="block text-[11px] text-[--color-ink-muted]">
-            How much you want to remember. Higher means more frequent reviews.
+          <span className="block text-xs text-ink-subtle">
+            Higher means more frequent reviews.
           </span>
         </label>
       </Section>
@@ -197,50 +198,36 @@ export function App() {
           ) : null}
 
           <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
-            <button
-              type="button"
-              className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-ink"
-              onClick={() => void rebuildSchedule()}
-            >
+            <Button variant="primary" onClick={() => void rebuildSchedule()}>
               Apply to existing problems
-            </button>
-            <span className="text-xs text-ink-subtle">
-              Reschedules anything you haven't graded yet.
-            </span>
+            </Button>
+            <Tooltip label="Problems you've already graded keep their schedule — only untouched ones move." align="start">
+              <span className="cursor-help text-xs text-ink-subtle underline decoration-dotted underline-offset-2">
+                Reschedules anything you haven't graded yet.
+              </span>
+            </Tooltip>
           </div>
         </div>
       </Section>
 
       <Section title="Backup and restore">
-        <div className="space-y-2 rounded-lg border border-[--color-border] bg-[--color-surface-raised] p-3">
-          <p className="text-xs text-[--color-ink-muted]">
+        <div className="space-y-2 rounded-lg border border-border bg-surface-raised p-3">
+          <p className="text-xs text-ink-muted">
             There's no server, so this is how your history moves between browsers or
             survives a wiped profile. Importing merges — it never drops what you already
             have, and review grades are kept.
           </p>
 
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="rounded-md border border-[--color-border] px-3 py-1.5 text-xs"
-              onClick={() => void exportData()}
-            >
+            <Button variant="secondary" onClick={() => void exportData()}>
               Export JSON
-            </button>
-            <button
-              type="button"
-              className="rounded-md border border-[--color-border] px-3 py-1.5 text-xs"
-              onClick={() => fileInput.current?.click()}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => fileInput.current?.click()}>
               Import from file
-            </button>
-            <button
-              type="button"
-              className="rounded-md border border-[--color-border] px-3 py-1.5 text-xs"
-              onClick={() => setPasting((open) => !open)}
-            >
+            </Button>
+            <Button variant="ghost" onClick={() => setPasting((open) => !open)}>
               {pasting ? "Cancel paste" : "Paste JSON"}
-            </button>
+            </Button>
             <input
               ref={fileInput}
               type="file"
@@ -259,15 +246,14 @@ export function App() {
           {pasting ? (
             <div className="space-y-2">
               <textarea
-                className="h-28 w-full rounded-md border border-[--color-border] bg-[--color-surface] p-2 font-mono text-[11px]"
+                className="h-28 w-full rounded-md border border-border bg-surface p-2 font-mono text-[11px]"
                 placeholder="Paste the contents of a snapshot JSON file"
                 value={pasted}
                 onChange={(e) => setPasted(e.target.value)}
               />
-              <button
-                type="button"
+              <Button
+                variant="primary"
                 disabled={pasted.trim().length === 0}
-                className="rounded-md bg-[--color-accent] px-3 py-1.5 text-xs font-semibold text-[--color-accent-ink] disabled:opacity-50"
                 onClick={() => {
                   void importJson(pasted).then(() => {
                     setPasted("");
@@ -276,12 +262,12 @@ export function App() {
                 }}
               >
                 Import pasted JSON
-              </button>
+              </Button>
             </div>
           ) : null}
 
           {message ? (
-            <p className={`text-xs ${failed ? "text-danger" : "text-ink-muted"}`}>{message}</p>
+            <Callout tone={failed ? "danger" : "good"}>{message}</Callout>
           ) : null}
         </div>
       </Section>
@@ -301,29 +287,17 @@ export function App() {
 
           {confirmingReset ? (
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="rounded-md bg-danger-solid px-3 py-1.5 text-xs font-semibold text-on-solid"
-                onClick={() => void resetData()}
-              >
+              <Button variant="danger" onClick={() => void resetData()}>
                 Yes, delete everything
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-border px-3 py-1.5 text-xs"
-                onClick={() => setConfirmingReset(false)}
-              >
+              </Button>
+              <Button variant="ghost" onClick={() => setConfirmingReset(false)}>
                 Cancel
-              </button>
+              </Button>
             </div>
           ) : (
-            <button
-              type="button"
-              className="rounded-md border border-danger/40 bg-danger-soft px-3 py-1.5 text-xs font-semibold text-danger"
-              onClick={() => setConfirmingReset(true)}
-            >
+            <Button variant="danger" onClick={() => setConfirmingReset(true)}>
               Reset all data
-            </button>
+            </Button>
           )}
         </div>
       </Section>
@@ -376,10 +350,10 @@ function NumberField({
 }) {
   return (
     <label className="space-y-1">
-      <span className="block text-xs text-[--color-ink-muted]">{label}</span>
+      <span className="block text-xs text-ink-muted">{label}</span>
       <input
         type="number"
-        className="w-full rounded-md border border-[--color-border] bg-[--color-surface-raised] px-2 py-1"
+        className="w-full rounded-md border border-border bg-surface-raised px-2 py-1"
         value={value}
         min={min}
         max={max}

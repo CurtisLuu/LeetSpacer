@@ -1,30 +1,31 @@
-import { Rating, type ReviewRating } from "@lcs/core";
+import type { ReviewRating } from "@lcs/core";
 import { useCallback, useEffect, useState } from "react";
 
-import { Empty, Section } from "../../components/ui";
+import {
+  Badge,
+  Button,
+  Callout,
+  Card,
+  DifficultyBadge,
+  DueBadge,
+  Empty,
+  GradeButtons,
+  Meter,
+  Section,
+  Tooltip,
+  TopicChip,
+} from "../../components/ui";
 import { relativeDays } from "../../lib/format";
 import { type ReviewItem, send } from "../../lib/messaging";
-
-/** Difficulty is the one label worth colouring — it sets expectations before you click. */
-const DIFFICULTY_CLASS: Record<string, string> = {
-  Easy: "bg-[--color-difficulty-easy-soft] text-[--color-difficulty-easy]",
-  Medium: "bg-[--color-difficulty-medium-soft] text-[--color-difficulty-medium]",
-  Hard: "bg-[--color-difficulty-hard-soft] text-[--color-difficulty-hard]",
-};
-
-const GRADES: { rating: ReviewRating; label: string; hint: string }[] = [
-  { rating: Rating.Again, label: "Again", hint: "Couldn't do it" },
-  { rating: Rating.Hard, label: "Hard", hint: "Struggled through" },
-  { rating: Rating.Good, label: "Good", hint: "Got it" },
-  { rating: Rating.Easy, label: "Easy", hint: "Instant" },
-];
 
 export function ReviewQueue() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [totalDue, setTotalDue] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [grading, setGrading] = useState<string | null>(null);
+  const [pendingRating, setPendingRating] = useState<ReviewRating | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [doneThisSession, setDoneThisSession] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -40,9 +41,8 @@ export function ReviewQueue() {
   useEffect(() => {
     void refresh();
 
-    // Data can arrive from elsewhere — a GitHub sync or a JSON import on the options
-    // page — and the panel stays open across all of it. Without this the queue only
-    // updated when the panel was reopened.
+    // Data can arrive from elsewhere — a sync on neetcode.io, or an import on the
+    // options page — and the panel stays open across all of it.
     const timer = setInterval(() => void refresh(), 5_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void refresh();
@@ -58,17 +58,23 @@ export function ReviewQueue() {
   const grade = useCallback(
     async (slug: string, rating: ReviewRating) => {
       setGrading(slug);
+      setPendingRating(rating);
       try {
-        await send("reviews:grade", { slug, rating });
-        // Drop it locally first so the row disappears immediately, then resync.
+        const { nextDue } = await send("reviews:grade", { slug, rating });
+        // Drop it locally first so the row leaves immediately, then resync.
         setItems((current) => current.filter((item) => item.slug !== slug));
         setTotalDue((current) => Math.max(0, current - 1));
+        setDoneThisSession((current) => current + 1);
         setExpanded(null);
+        setError(null);
         await refresh();
+        return nextDue;
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
+        return null;
       } finally {
         setGrading(null);
+        setPendingRating(null);
       }
     },
     [refresh],
@@ -77,9 +83,9 @@ export function ReviewQueue() {
   if (error) {
     return (
       <Section title="Today">
-        <p className="rounded-lg border border-[--color-border] p-3 text-xs text-[--color-warn]">
+        <Callout tone="danger" title="Couldn't load the queue">
           {error}
-        </p>
+        </Callout>
       </Section>
     );
   }
@@ -88,11 +94,13 @@ export function ReviewQueue() {
     return (
       <Section title="Today">
         <Empty
-          title={totalDue === 0 ? "Nothing due" : "All caught up for today"}
+          title={doneThisSession > 0 ? "Done for today" : totalDue === 0 ? "Nothing due" : "All caught up"}
           body={
-            totalDue === 0
-              ? "Import your NeetCode history to build a review schedule: pnpm import:neetcode, then Import JSON in settings."
-              : "You've hit today's review limit. Raise it in settings if you want more."
+            doneThisSession > 0
+              ? `${doneThisSession} reviewed. The next batch comes due on its own.`
+              : totalDue === 0
+                ? "Open neetcode.io/practice while signed in and your completed problems sync automatically."
+                : "You've hit today's review limit. Raise it in settings if you want more."
           }
         />
       </Section>
@@ -100,53 +108,73 @@ export function ReviewQueue() {
   }
 
   return (
-    <Section title={`Today — ${items.length} of ${totalDue} due`}>
+    <Section
+      title="Today"
+      badge={
+        <Tooltip label={`${totalDue} due in total, capped by your daily limit`} align="start">
+          <Badge tone="accent">
+            {items.length} of {totalDue}
+          </Badge>
+        </Tooltip>
+      }
+    >
+      {doneThisSession > 0 ? (
+        <Meter
+          value={doneThisSession}
+          max={doneThisSession + items.length}
+          label="Reviewed"
+          tone="good"
+          size="sm"
+        />
+      ) : null}
+
       <ul className="space-y-2">
         {items.map((item) => {
           const isOpen = expanded === item.slug;
           const isBusy = grading === item.slug;
 
           return (
-            <li
-              key={item.slug}
-              className="rounded-lg border border-[--color-border] bg-[--color-surface-raised] p-3"
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <a
-                  className="min-w-0 font-medium text-[--color-accent] underline underline-offset-2"
-                  href={item.url}
-                  target="_blank"
-                  rel="noreferrer"
+            <Card as="li" key={item.slug} interactive className="group/row">
+              <div className="flex min-w-0 items-start justify-between gap-2">
+                <Tooltip label="Open on LeetCode" align="start">
+                  <a
+                    className="min-w-0 font-medium text-accent underline decoration-transparent underline-offset-2 transition-colors hover:decoration-current"
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {item.title}
+                  </a>
+                </Tooltip>
+
+                <Tooltip
+                  label={
+                    item.overdueDays >= 0
+                      ? `Was due ${relativeDays(item.overdueDays)} ago`
+                      : `Not due for another ${relativeDays(item.overdueDays)}`
+                  }
+                  align="end"
                 >
-                  {item.title}
-                </a>
-                <span className="shrink-0 text-[11px] text-[--color-ink-muted]">
-                  {item.overdueDays >= 0
-                    ? `${relativeDays(item.overdueDays)} overdue`
-                    : `due in ${relativeDays(item.overdueDays)}`}
-                </span>
+                  <DueBadge overdueDays={item.overdueDays} />
+                </Tooltip>
               </div>
 
-              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-                {item.difficulty ? (
-                  <span
-                    className={`rounded px-1.5 py-0.5 font-medium ${DIFFICULTY_CLASS[item.difficulty]}`}
-                  >
-                    {item.difficulty}
-                  </span>
-                ) : null}
+              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
+                <DifficultyBadge difficulty={item.difficulty} />
                 {item.topicTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded bg-[--color-surface] px-1.5 py-0.5 text-[--color-ink-muted]"
-                  >
-                    {tag.replace(/-/g, " ")}
-                  </span>
+                  <TopicChip key={tag} topic={tag} />
                 ))}
               </div>
 
-              <p className="mt-1 text-[11px] text-[--color-ink-muted]">
-                {item.attempts > 1 ? `${item.attempts} submissions · ` : ""}
+              <p className="mt-1.5 text-xs text-ink-subtle">
+                {item.attempts > 1 ? (
+                  <Tooltip label="Submissions it took you to pass. More means it was seeded as harder." align="start">
+                    <span className="cursor-help underline decoration-dotted underline-offset-2">
+                      {item.attempts} submissions
+                    </span>
+                  </Tooltip>
+                ) : null}
+                {item.attempts > 1 ? " · " : ""}
                 {item.lastSolvedAt
                   ? `solved ${new Date(item.lastSolvedAt).toLocaleDateString()}`
                   : "never solved"}
@@ -154,30 +182,26 @@ export function ReviewQueue() {
               </p>
 
               {isOpen ? (
-                <div className="mt-2 grid grid-cols-4 gap-1">
-                  {GRADES.map((option) => (
-                    <button
-                      key={option.rating}
-                      type="button"
-                      disabled={isBusy}
-                      title={option.hint}
-                      className="rounded-md border border-[--color-border] px-1 py-1.5 text-[11px] font-medium disabled:opacity-50"
-                      onClick={() => void grade(item.slug, option.rating)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                <div className="mt-2">
+                  <p className="mb-1 text-xs text-ink-muted">How well did you recall it?</p>
+                  <GradeButtons
+                    onGrade={(rating) => void grade(item.slug, rating)}
+                    disabled={isBusy}
+                    pendingRating={isBusy ? pendingRating : null}
+                  />
                 </div>
               ) : (
-                <button
-                  type="button"
-                  className="mt-2 w-full rounded-md bg-[--color-accent] px-2 py-1.5 text-[11px] font-semibold text-[--color-accent-ink]"
+                <Button
+                  className="mt-2 opacity-90 transition-opacity group-hover/row:opacity-100"
+                  variant="primary"
+                  size="sm"
+                  block
                   onClick={() => setExpanded(item.slug)}
                 >
                   Rate this
-                </button>
+                </Button>
               )}
-            </li>
+            </Card>
           );
         })}
       </ul>

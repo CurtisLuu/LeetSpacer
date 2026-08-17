@@ -12,6 +12,7 @@ export * from "./cx";
 export * from "./field";
 export * from "./grade-button";
 export * from "./meter";
+export * from "./tooltip";
 
 /* -------------------------------------------------------------------------- */
 /* Layout                                                                      */
