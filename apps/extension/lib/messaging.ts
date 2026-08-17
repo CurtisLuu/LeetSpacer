@@ -93,7 +93,12 @@ export interface MessageMap {
    */
   "sync:claim": {
     req: { provider: ProviderId };
-    res: { mode: SyncMode | null; since: number };
+    res: {
+      mode: SyncMode | null;
+      since: number;
+      /** Why a null mode was returned. Silence here is impossible to diagnose from. */
+      reason?: "disabled" | "in-flight" | "too-soon";
+    };
   };
   /** Release the claim and record the outcome. Must follow every successful claim. */
   "sync:completed": {

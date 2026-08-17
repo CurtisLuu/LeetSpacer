@@ -87,12 +87,17 @@ export default defineContentScript({
  */
 async function syncActivity(signal: AbortSignal): Promise<void> {
   const claim = await send("sync:claim", { provider: "neetcode" }).catch(() => null);
-  if (!claim?.mode) return;
+  if (!claim?.mode) {
+    console.info(`[lcs] neetcode: no sync this load (${claim?.reason ?? "unreachable"})`);
+    return;
+  }
 
   const mode: SyncMode = claim.mode;
 
   // The page authenticates itself after this script starts, so there is nothing to
   // borrow yet. Waits for it to make a call of its own.
+  console.info(`[lcs] neetcode: ${mode} activity sync starting, waiting for the page…`);
+
   if (!(await waitForSession(signal))) {
     await send("sync:completed", {
       provider: "neetcode",
@@ -122,7 +127,8 @@ async function syncActivity(signal: AbortSignal): Promise<void> {
     signal,
     throttle: createThrottle(THROTTLE_MS, THROTTLE_JITTER_MS),
     toLeetcodeSlug: (neetcodeSlug) => slugs.get(neetcodeSlug) ?? null,
-    onProgress: (update) => console.debug(`[lcs] neetcode ${update.phase}: ${update.fetched}`),
+    onProgress: (update) =>
+      console.info(`[lcs] neetcode ${update.phase}: ${update.fetched}/${update.total ?? "?"}`),
   };
 
   let inserted = 0;
@@ -142,8 +148,8 @@ async function syncActivity(signal: AbortSignal): Promise<void> {
     }
 
     await send("sync:completed", { provider: "neetcode", mode });
-    console.debug(
-      `[lcs] neetcode ${mode} sync: ${inserted} new events across ${touched.size} problems`,
+    console.info(
+      `[lcs] neetcode ${mode} sync done: ${inserted} new events across ${touched.size} problems`,
     );
   } catch (cause) {
     const error = cause instanceof Error ? cause.message : String(cause);

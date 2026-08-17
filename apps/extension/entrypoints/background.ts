@@ -113,21 +113,25 @@ export default defineBackground(() => {
     "sync:status": async () => buildStatus(),
 
     "sync:claim": async ({ provider }) => {
-      const declined = { mode: null, since: 0 } as const;
       const settings = await (await getStore()).settings.get();
       const state = settings.providers[provider];
       const now = Date.now();
 
-      if (!state.enabled || syncing.has(provider)) return declined;
+      if (!state.enabled) return { mode: null, since: 0, reason: "disabled" } as const;
+      if (syncing.has(provider)) return { mode: null, since: 0, reason: "in-flight" } as const;
 
       const attempted = lastAttemptAt.get(provider);
-      if (attempted !== undefined && now - attempted < INCREMENTAL_INTERVAL_MS) return declined;
+      if (attempted !== undefined && now - attempted < INCREMENTAL_INTERVAL_MS) {
+        return { mode: null, since: 0, reason: "too-soon" } as const;
+      }
 
       const since = state.lastFullSyncAt === null
         ? null
         : (state.lastIncrementalSyncAt ?? state.lastFullSyncAt);
 
-      if (since !== null && now - since < INCREMENTAL_INTERVAL_MS) return declined;
+      if (since !== null && now - since < INCREMENTAL_INTERVAL_MS) {
+        return { mode: null, since: 0, reason: "too-soon" } as const;
+      }
 
       syncing.add(provider);
       lastAttemptAt.set(provider, now);
