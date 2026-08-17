@@ -128,27 +128,36 @@ The queue shows what is due today and stops there. **Browse all** opens a full p
 every problem in the track, soonest first, with a live countdown to each unlock, a filter
 for available versus locked, and a title search.
 
-## Notes for anyone touching the NeetCode adapter
+## What went wrong building the NeetCode adapter
 
-It took several wrong turns to get working, and every one of them failed silently. Worth
-knowing before changing it:
+Worth reading before changing it, and worth reading before writing the next adapter. The
+short version: **the API was the part that went right.** A throwaway probe run in the page
+console predicted the response shapes, the `problemId` slug field, and 71-of-77 coverage,
+and when the adapter finally worked the data matched exactly. Every failure was in the
+environment the adapter runs in, which the probe never touched.
 
-- **A content script cannot fetch an extension asset.** The slug map has to come from the
-  background over messaging. Declaring `catalog/*` web-accessible would work and would also
-  hand the whole catalogue to any page on the origin.
-- **Do not read the auth token from Firebase's IndexedDB.** The stored copy expires hourly,
-  so it is stale far more often than not — that produced an HTTP 401 on every sync. Opening
-  that database also *creates* it when absent, which is not ours to do on someone else's
-  origin. The token is relayed off the page's own requests instead.
-- **NeetCode uses XHR, not `fetch`.** Angular's HttpClient does. An observer that only
-  wraps `fetch` sees nothing, so `setRequestHeader` has to be wrapped to catch the header.
-- **The completed-set read and the history walk share a sync cursor.** The former had been
-  setting it for weeks, so the walk inherited a recent timestamp on its first run and went
-  incremental, fetching one day and declaring the history done.
+| Symptom | Actual cause | Fix |
+|---|---|---|
+| Every submission dropped as "unmapped slug" | A content script can't `fetch` an extension asset. The slug map silently came back empty. | Background passes the map over messaging. Declaring `catalog/*` web-accessible would also work, and would hand the whole catalogue to any page on the origin. |
+| An empty `firebaseLocalStorageDb` appearing on neetcode.io | `indexedDB.open` *creates* the database when absent, and at `document_start` it usually was. | Check existence first. Better: don't touch Firebase's storage at all. |
+| `HTTP 401` on every call | The ID token in Firebase's storage expires hourly, so the stored copy is stale far more often than fresh. The probe only worked because the page had just refreshed it. | Relay the `Authorization` header off a request the page has already made successfully. |
+| "Not signed in" on a page that plainly was | The observer captured request *headers* on `fetch` only. Angular's HttpClient uses XHR, so the token went past unseen. | Wrap `setRequestHeader`. An XHR exposes no way to read headers back afterwards. |
+| Every problem dated today, after a sync that reported success | The completed-set read and the history walk share one provider cursor, and the former had been setting it for weeks. The walk inherited a recent timestamp on its first run, went incremental, fetched one day, and declared the history done. | A settings migration clears the cursor, buying one full pass. |
 
-The general lesson: log at `info`, not `debug`. Chrome files `debug` under Verbose and
-hides it, so a sync that ran, one that failed, and one never attempted all looked
-identical from the console — nothing at all.
+Two things are worth generalising.
+
+**Probe the environment, not just the API.** The probe ran in the page console: MAIN world,
+the page's own `fetch`, a token seconds old. The adapter runs in an isolated world with
+different asset rules, different interception needs, and a token of unknown age. Every
+failure lived in that gap, and the probe's success made all of it feel settled.
+
+**Log at `info`, not `debug`.** Chrome files `debug` under Verbose and hides it by default,
+so a sync that ran, one that failed, and one never attempted all looked identical from the
+console — nothing at all. This cost more time than any individual bug on the list. A
+declined sync now reports *why* rather than returning a bare null, for the same reason.
+
+Note that the LeetCode adapter has never been through any of this. It works, but it was
+written the same way — from a reading of endpoints, with the environment assumed.
 
 ## Layout
 
