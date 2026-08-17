@@ -16,9 +16,6 @@ importers:
       '@lcs/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@lcs/importers':
-        specifier: workspace:*
-        version: link:../../packages/importers
       '@lcs/providers':
         specifier: workspace:*
         version: link:../../packages/providers

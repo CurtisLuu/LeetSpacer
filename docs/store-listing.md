@@ -113,7 +113,6 @@ solved, using their own practice history from LeetCode and NeetCode.
 | `alarms` | Periodically recomputes how many reviews are due so the toolbar badge stays accurate without polling. |
 | Host: `leetcode.com` | A content script on leetcode.com reads the signed-in user's own submission history (problem slugs, timestamps, verdicts) to schedule reviews from real solve dates. Reading it from that origin is what lets the user's existing session apply without the extension ever handling a credential. |
 | Host: `neetcode.io` | A content script on neetcode.io reads the signed-in user's own set of completed problems, which the page has already fetched and cached in localStorage. The extension issues no request of its own here. |
-| Host: `api.github.com` (optional) | Requested only if the user explicitly connects a NeetCode GitHub Sync repository, to read commit dates as a source of real solve dates. Never requested at install. |
 | Remote code | Not used. All code is bundled in the package; nothing is fetched or evaluated at runtime. |
 
 **Data usage disclosures** — the dashboard requires you to tick what you collect. The

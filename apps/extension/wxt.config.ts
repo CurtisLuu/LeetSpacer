@@ -37,9 +37,6 @@ export default defineConfig({
     // `alarms` to schedule background syncs. No `tabs`, no `<all_urls>`, no remote code.
     permissions: ["storage", "sidePanel", "alarms"],
 
-    // Requested from the options page when you connect a repository, not at install.
-    optional_host_permissions: ["https://api.github.com/*"],
-
     // Both sites are read from a content script on their own origin, using the session
     // you're already signed in with. Content scripts are declared statically, so these
     // appear in the install prompt.
