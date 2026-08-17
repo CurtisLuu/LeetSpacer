@@ -1,0 +1,23 @@
+{
+  "$comment": "NeetCode roadmap DAG. Hand-seeded from neetcode.io/roadmap; the P4 NeetCode adapter verifies these edges against the live page and reports drift. Topic ids match the slugs used in Problem.roadmapTopic.",
+  "topics": [
+    { "id": "arrays-hashing", "title": "Arrays & Hashing", "prerequisites": [] },
+    { "id": "two-pointers", "title": "Two Pointers", "prerequisites": ["arrays-hashing"] },
+    { "id": "stack", "title": "Stack", "prerequisites": ["arrays-hashing"] },
+    { "id": "binary-search", "title": "Binary Search", "prerequisites": ["two-pointers"] },
+    { "id": "sliding-window", "title": "Sliding Window", "prerequisites": ["two-pointers"] },
+    { "id": "linked-list", "title": "Linked List", "prerequisites": ["two-pointers"] },
+    { "id": "trees", "title": "Trees", "prerequisites": ["binary-search", "linked-list"] },
+    { "id": "tries", "title": "Tries", "prerequisites": ["trees"] },
+    { "id": "heap-priority-queue", "title": "Heap / Priority Queue", "prerequisites": ["trees"] },
+    { "id": "backtracking", "title": "Backtracking", "prerequisites": ["trees"] },
+    { "id": "graphs", "title": "Graphs", "prerequisites": ["backtracking", "heap-priority-queue"] },
+    { "id": "1d-dp", "title": "1-D Dynamic Programming", "prerequisites": ["backtracking"] },
+    { "id": "advanced-graphs", "title": "Advanced Graphs", "prerequisites": ["graphs"] },
+    { "id": "2d-dp", "title": "2-D Dynamic Programming", "prerequisites": ["1d-dp", "graphs"] },
+    { "id": "greedy", "title": "Greedy", "prerequisites": ["1d-dp"] },
+    { "id": "intervals", "title": "Intervals", "prerequisites": ["greedy"] },
+    { "id": "bit-manipulation", "title": "Bit Manipulation", "prerequisites": ["1d-dp"] },
+    { "id": "math-geometry", "title": "Math & Geometry", "prerequisites": ["bit-manipulation"] }
+  ]
+}

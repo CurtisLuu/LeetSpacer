@@ -1,0 +1,209 @@
+/**
+ * The canonical domain model.
+ *
+ * Everything here is provider-agnostic: LeetCode and NeetCode both normalize into
+ * these shapes, joined on `slug` (the LeetCode `titleSlug`, e.g. "two-sum").
+ * Nothing in this package may import browser or extension APIs.
+ */
+
+export type ProviderId = "leetcode" | "neetcode";
+
+export const PROVIDER_IDS: readonly ProviderId[] = ["leetcode", "neetcode"];
+
+export type Difficulty = "Easy" | "Medium" | "Hard";
+
+/** Unix milliseconds. Used everywhere rather than Date, so state is trivially serializable. */
+export type Timestamp = number;
+
+// ---------------------------------------------------------------------------
+// Catalog (static, shipped with the extension)
+// ---------------------------------------------------------------------------
+
+/** A problem as it exists in the world, independent of any user's history. */
+export interface Problem {
+  /** LeetCode titleSlug — the canonical join key across providers. */
+  slug: string;
+  /** LeetCode's public question number (`frontendQuestionId`). */
+  lcId: number;
+  title: string;
+  difficulty: Difficulty;
+  /** LeetCode topic tag slugs, e.g. ["array", "hash-table"]. */
+  topicTags: string[];
+  /** Acceptance rate, 0..1. */
+  acRate: number;
+  isPaidOnly: boolean;
+  /** Curated list membership, e.g. ["blind75", "neetcode150"]. */
+  lists: string[];
+  /** NeetCode roadmap topic this problem belongs to, if any. */
+  roadmapTopic: string | null;
+  /**
+   * Company -> frequency score (0..1). Community-sourced: LeetCode gates real
+   * company tags behind Premium, so this is a weighting hint, never a hard filter.
+   */
+  companyFreq: Record<string, number>;
+}
+
+/** A node in the NeetCode roadmap DAG. */
+export interface RoadmapTopic {
+  id: string;
+  title: string;
+  /** Topic ids that should be reasonably mastered before this one is recommended. */
+  prerequisites: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Per-user state (derived by folding ProgressEvents)
+// ---------------------------------------------------------------------------
+
+export type ProblemStatus = "todo" | "attempted" | "solved";
+
+/**
+ * Everything we know about one user's relationship to one problem.
+ * This is a *projection* of the event log, never edited directly by adapters.
+ */
+export interface ProblemState {
+  slug: string;
+  status: ProblemStatus;
+  firstSolvedAt: Timestamp | null;
+  lastSolvedAt: Timestamp | null;
+  /** Total submissions observed, accepted or not. */
+  attempts: number;
+  /** Accepted submissions observed. */
+  acceptedCount: number;
+  /** Providers that have contributed evidence about this problem. */
+  sources: ProviderId[];
+  /** NeetCode-style per-list checkbox state, keyed by list id. */
+  listChecked: Record<string, boolean>;
+  updatedAt: Timestamp;
+}
+
+export function emptyProblemState(slug: string, at: Timestamp): ProblemState {
+  return {
+    slug,
+    status: "todo",
+    firstSolvedAt: null,
+    lastSolvedAt: null,
+    attempts: 0,
+    acceptedCount: 0,
+    sources: [],
+    listChecked: {},
+    updatedAt: at,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Spaced repetition
+// ---------------------------------------------------------------------------
+
+/** FSRS grades. Mirrors ts-fsrs `Rating` so the P3 scheduler adapter stays thin. */
+export const Rating = {
+  Again: 1,
+  Hard: 2,
+  Good: 3,
+  Easy: 4,
+} as const;
+
+export type ReviewRating = (typeof Rating)[keyof typeof Rating];
+
+export type CardPhase = "new" | "learning" | "review" | "relearning";
+
+/** FSRS scheduling state for a solved problem. Only solved problems get cards. */
+export interface ReviewCard {
+  slug: string;
+  due: Timestamp;
+  stability: number;
+  difficulty: number;
+  elapsedDays: number;
+  scheduledDays: number;
+  /** FSRS learning-step index; carried so cards round-trip through ts-fsrs unchanged. */
+  learningSteps: number;
+  reps: number;
+  lapses: number;
+  phase: CardPhase;
+  lastReview: Timestamp | null;
+}
+
+export interface ReviewLog {
+  /** Deterministic: `${slug}:${reviewedAt}`. */
+  id: string;
+  slug: string;
+  rating: ReviewRating;
+  reviewedAt: Timestamp;
+  elapsedDays: number;
+  scheduledDays: number;
+  phase: CardPhase;
+  /** Whether the user graded it themselves or we inferred it from submission signals. */
+  source: "manual" | "derived";
+}
+
+// ---------------------------------------------------------------------------
+// Ingest events (append-only)
+// ---------------------------------------------------------------------------
+
+export type SubmissionVerdict =
+  | "accepted"
+  | "wrong_answer"
+  | "time_limit_exceeded"
+  | "memory_limit_exceeded"
+  | "runtime_error"
+  | "compile_error"
+  | "other";
+
+interface BaseEvent {
+  /**
+   * Deterministic id — the same real-world fact observed twice must produce the
+   * same id, so re-syncing is idempotent. Build with `eventId()`.
+   */
+  id: string;
+  provider: ProviderId;
+  /** When we observed it (not when it happened). */
+  observedAt: Timestamp;
+}
+
+export type ProgressEvent =
+  | (BaseEvent & { type: "problem_solved"; slug: string; solvedAt: Timestamp })
+  | (BaseEvent & { type: "problem_attempted"; slug: string; attemptedAt: Timestamp })
+  | (BaseEvent & {
+      type: "submission_result";
+      slug: string;
+      verdict: SubmissionVerdict;
+      submittedAt: Timestamp;
+    })
+  | (BaseEvent & {
+      type: "list_checked";
+      slug: string;
+      list: string;
+      checked: boolean;
+      changedAt: Timestamp;
+    });
+
+export type ProgressEventType = ProgressEvent["type"];
+
+/**
+ * Build a deterministic event id. Two syncs that observe the same underlying fact
+ * produce identical ids, so `EventStore.append` can dedupe on insert.
+ */
+export function eventId(
+  provider: ProviderId,
+  type: ProgressEventType,
+  slug: string,
+  at: Timestamp,
+  discriminator = "",
+): string {
+  const suffix = discriminator ? `:${discriminator}` : "";
+  return `${provider}:${type}:${slug}:${at}${suffix}`;
+}
+
+/** The moment an event describes, as opposed to when we noticed it. */
+export function eventOccurredAt(ev: ProgressEvent): Timestamp {
+  switch (ev.type) {
+    case "problem_solved":
+      return ev.solvedAt;
+    case "problem_attempted":
+      return ev.attemptedAt;
+    case "submission_result":
+      return ev.submittedAt;
+    case "list_checked":
+      return ev.changedAt;
+  }
+}

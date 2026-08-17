@@ -1,0 +1,140 @@
+import type {
+  Difficulty,
+  IngestResult,
+  ProgressEvent,
+  ProviderId,
+  ReviewRating,
+  Settings,
+} from "@lcs/core";
+
+/** One row in the review queue, flattened for display. */
+export interface ReviewItem {
+  slug: string;
+  title: string;
+  due: number;
+  /** Positive means overdue. */
+  overdueDays: number;
+  attempts: number;
+  lastSolvedAt: number | null;
+  reps: number;
+  /** From the bundled catalog; null when the slug isn't in it. */
+  difficulty: Difficulty | null;
+  topicTags: string[];
+  url: string;
+}
+
+export type SyncMode = "full" | "incremental";
+
+export interface ProviderStatus {
+  provider: ProviderId;
+  /** Whether a tab on that origin is currently reachable. */
+  connected: boolean;
+  username: string | null;
+  lastFullSyncAt: number | null;
+  lastIncrementalSyncAt: number | null;
+  lastError: string | null;
+}
+
+export interface SyncStatus {
+  running: boolean;
+  providers: ProviderStatus[];
+  problemsTracked: number;
+  solved: number;
+  eventsRecorded: number;
+  /** Reported by the background so UI surfaces never import the dataset itself. */
+  catalog: { count: number; generatedAt: string | null };
+}
+
+/**
+ * Every message that crosses a context boundary, with its response type.
+ * Content scripts and UI never reach into each other — they go through the background.
+ */
+export interface MessageMap {
+  "sync:run": { req: { provider: ProviderId; mode: SyncMode }; res: SyncStatus };
+  "sync:status": { req: Record<string, never>; res: SyncStatus };
+  "events:ingest": {
+    req: { provider: ProviderId; events: ProgressEvent[] };
+    res: IngestResult;
+  };
+  "provider:hello": { req: { provider: ProviderId; url: string }; res: { ack: true } };
+  "reviews:due": {
+    req: { limit?: number };
+    res: { items: ReviewItem[]; totalDue: number; limit: number };
+  };
+  "reviews:grade": { req: { slug: string; rating: ReviewRating }; res: { nextDue: number } };
+  "settings:get": { req: Record<string, never>; res: Settings };
+  "settings:update": { req: { patch: Partial<Settings> }; res: Settings };
+  /**
+   * Something wrote to the store from outside the background — an import, say. Lets the
+   * badge catch up without every surface having to poll storage.
+   */
+  "data:changed": { req: Record<string, never>; res: { ok: true } };
+  /** Wipe everything and start over. Settings are kept unless `settings` is true. */
+  "data:reset": { req: { settings?: boolean }; res: { ok: true } };
+  /** Re-apply the seeding strategy to cards that have never been graded. */
+  "schedule:rebuild": { req: Record<string, never>; res: { rebuilt: number; kept: number } };
+}
+
+export type MessageType = keyof MessageMap;
+
+type Envelope<T extends MessageType = MessageType> = {
+  type: T;
+  payload: MessageMap[T]["req"];
+};
+
+/** What `onMessage` replies with when a handler throws. */
+interface ErrorEnvelope {
+  error: string;
+}
+
+function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { error?: unknown }).error === "string"
+  );
+}
+
+export async function send<T extends MessageType>(
+  type: T,
+  payload: MessageMap[T]["req"],
+): Promise<MessageMap[T]["res"]> {
+  const response = await browser.runtime.sendMessage({ type, payload } satisfies Envelope<T>);
+
+  // A failed handler replies with an error envelope, not a result. Casting that to the
+  // response type hands callers an object missing every field they expect, so the real
+  // failure surfaces as a TypeError somewhere unrelated. Throw here instead.
+  if (isErrorEnvelope(response)) {
+    throw new Error(`${type} failed: ${response.error}`);
+  }
+
+  if (response === undefined) {
+    throw new Error(`${type} got no response — the background worker may not be running.`);
+  }
+
+  return response as MessageMap[T]["res"];
+}
+
+export type MessageHandlers = {
+  [T in MessageType]?: (payload: MessageMap[T]["req"]) => Promise<MessageMap[T]["res"]>;
+};
+
+/** Register handlers in the background. Unknown message types are ignored, not thrown. */
+export function onMessage(handlers: MessageHandlers): void {
+  browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    const envelope = message as Partial<Envelope>;
+    if (!envelope || typeof envelope.type !== "string") return false;
+
+    const handler = handlers[envelope.type] as
+      | ((payload: unknown) => Promise<unknown>)
+      | undefined;
+    if (!handler) return false;
+
+    // Returning true keeps the message channel open for the async response.
+    handler(envelope.payload).then(sendResponse, (error: unknown) => {
+      console.error(`[lcs] handler for ${envelope.type} failed`, error);
+      sendResponse({ error: error instanceof Error ? error.message : String(error) });
+    });
+    return true;
+  });
+}

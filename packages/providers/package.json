@@ -1,0 +1,21 @@
+{
+  "name": "@lcs/providers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Site adapters. Each one turns a website's private state into ProgressEvents.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lcs/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

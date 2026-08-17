@@ -1,0 +1,23 @@
+{
+  "name": "@lcs/catalog",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bundled problem dataset and the NeetCode roadmap DAG.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build:data": "node --experimental-strip-types scripts/build-catalog.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lcs/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

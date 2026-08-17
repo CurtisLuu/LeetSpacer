@@ -1,0 +1,22 @@
+{
+  "name": "@lcs/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Framework-free domain model, event folding, and recommendation logic. No browser APIs.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "ts-fsrs": "^5.4.1"
+  }
+}

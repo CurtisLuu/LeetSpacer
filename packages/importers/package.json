@@ -1,0 +1,25 @@
+{
+  "name": "@lcs/importers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline importers that turn exported solution history into a loadable snapshot.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts"
+  },
+  "scripts": {
+    "import:neetcode": "tsx scripts/import-neetcode.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lcs/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@lcs/store",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "IndexedDB implementation of the @lcs/core Store interface.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lcs/core": "workspace:*",
+    "idb": "^8.0.3"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

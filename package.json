@@ -1,0 +1,18 @@
+{
+  "name": "leetcode-spaced",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Spaced-repetition and gap-analysis recommendations over your LeetCode and NeetCode history",
+  "scripts": {
+    "dev": "pnpm --filter @lcs/extension dev",
+    "build": "pnpm -r --if-present build",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "catalog:build": "pnpm --filter @lcs/catalog build:data",
+    "import:neetcode": "pnpm --filter @lcs/importers import:neetcode"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

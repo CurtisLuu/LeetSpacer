@@ -1,0 +1,241 @@
+@import "tailwindcss";
+
+/*
+ * Extension surfaces render inside the browser chrome, so they follow the browser's
+ * theme rather than imposing one. Tokens are defined light-first and overridden for
+ * dark, which keeps every component free of conditional color logic.
+ *
+ * Colour here is semantic, never decorative. Every family answers one question:
+ *
+ *   surface / border / ink   what layer am I on, how loud is this text
+ *   accent                   the one brand colour: primary actions and links
+ *   good / warn / danger /   feedback on something that already happened
+ *   info
+ *   grade-*                  the four FSRS answers (again / hard / good / easy)
+ *   difficulty-*             the problem's own difficulty (Easy / Medium / Hard)
+ *   urgency-*                how late a review is (overdue / due today / upcoming)
+ *
+ * Each coloured family has three slots:
+ *   <name>        foreground — text and icons, AA (>=4.5:1) on surface, raised and soft
+ *   <name>-soft   a translucent tint for chip and button backgrounds. Alpha, not a
+ *                 flat hex, so it composites correctly over both surface layers.
+ *   <name>-solid  a filled background, always paired with --color-on-solid.
+ *
+ * Contrast was checked pairwise against surface, surface-raised and the composited
+ * soft tints in both themes; nothing below 4.5:1 carries text.
+ */
+@theme static {
+  /* Layers, lightest to deepest. */
+  --color-surface: #ffffff;
+  --color-surface-raised: #f6f7f9;
+  --color-surface-sunken: #eceef2;
+
+  --color-border: #e3e5ea;
+  --color-border-strong: #cbd0d9;
+
+  /* Text loudness. `ink` is body copy, `muted` is secondary, `subtle` is metadata. */
+  --color-ink: #14161a;
+  --color-ink-muted: #565c66;
+  --color-ink-subtle: #646a75;
+
+  --color-accent: #6d28d9;
+  --color-accent-strong: #5b21b6;
+  --color-accent-soft: #7c3aed14;
+  --color-accent-ink: #ffffff;
+
+  /* Text placed on any *-solid fill. */
+  --color-on-solid: #ffffff;
+
+  /* Keyboard focus. Deliberately the accent hue so focus reads as "the app". */
+  --color-ring: #7c3aed;
+
+  /* Feedback. */
+  --color-good: #0f6d33;
+  --color-good-soft: #16a34a14;
+  --color-good-solid: #12703a;
+  --color-warn: #9a4d09;
+  --color-warn-soft: #d9770614;
+  --color-warn-solid: #a8500b;
+  --color-danger: #b3261e;
+  --color-danger-soft: #dc262614;
+  --color-danger-solid: #dc2626;
+  --color-info: #1d4ed8;
+  --color-info-soft: #2563eb14;
+  --color-info-solid: #1d4ed8;
+
+  /* FSRS grades. Red -> amber -> green -> blue reads as a recall scale. */
+  --color-grade-again: #b3261e;
+  --color-grade-again-soft: #dc262614;
+  --color-grade-again-solid: #dc2626;
+  --color-grade-hard: #9a4d09;
+  --color-grade-hard-soft: #d9770614;
+  --color-grade-hard-solid: #a8500b;
+  --color-grade-good: #0f6d33;
+  --color-grade-good-soft: #16a34a14;
+  --color-grade-good-solid: #12703a;
+  --color-grade-easy: #1d4ed8;
+  --color-grade-easy-soft: #2563eb14;
+  --color-grade-easy-solid: #1d4ed8;
+
+  /* Problem difficulty. Teal rather than green so it never reads as a grade. */
+  --color-difficulty-easy: #0d6b63;
+  --color-difficulty-easy-soft: #0d948814;
+  --color-difficulty-medium: #9a4d09;
+  --color-difficulty-medium-soft: #d9770614;
+  --color-difficulty-hard: #b31239;
+  --color-difficulty-hard-soft: #e11d4814;
+
+  /* Review urgency: late, due now, still ahead. */
+  --color-urgency-high: #b3261e;
+  --color-urgency-high-soft: #dc262614;
+  --color-urgency-medium: #9a4d09;
+  --color-urgency-medium-soft: #d9770614;
+  --color-urgency-low: #4c5462;
+  --color-urgency-low-soft: #64748b14;
+
+  /*
+   * Type. The panels are dense, so the whole ramp is nudged up ~1px from Tailwind's
+   * default: `text-xs` becomes 13px, which is the smallest size that stays legible
+   * at typical side-panel widths.
+   */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.625rem;
+}
+
+/*
+ * The dark override is a plain `:root` rule, NOT a second `@theme` block.
+ *
+ * Tailwind v4 hoists every `@theme` into its own layer and drops the surrounding
+ * at-rule, so `@media (prefers-color-scheme: dark) { @theme { … } }` silently
+ * applied the dark values unconditionally — the panels rendered dark even in a
+ * light browser. Utilities compile to `var(--color-*)`, so redefining the
+ * variables here (unlayered, therefore winning over the theme layer) is all it
+ * takes, and every utility follows.
+ */
+@media (prefers-color-scheme: dark) {
+  :root,
+  :host {
+    --color-surface: #15171c;
+    --color-surface-raised: #1d2027;
+    --color-surface-sunken: #101215;
+
+    --color-border: #2b2f39;
+    --color-border-strong: #3c4250;
+
+    --color-ink: #eef0f4;
+    --color-ink-muted: #a2a9b5;
+    --color-ink-subtle: #89909d;
+
+    --color-accent: #a78bfa;
+    --color-accent-strong: #c4b5fd;
+    --color-accent-soft: #8b5cf62e;
+    --color-accent-ink: #15171c;
+
+    --color-on-solid: #101216;
+
+    --color-ring: #a78bfa;
+
+    --color-good: #6ee7b7;
+    --color-good-soft: #22c55e2e;
+    --color-good-solid: #22c55e;
+    --color-warn: #fcd34d;
+    --color-warn-soft: #f59e0b2e;
+    --color-warn-solid: #f59e0b;
+    --color-danger: #fca5a5;
+    --color-danger-soft: #ef44442e;
+    --color-danger-solid: #ef4444;
+    --color-info: #93c5fd;
+    --color-info-soft: #3b82f62e;
+    --color-info-solid: #60a5fa;
+
+    --color-grade-again: #fca5a5;
+    --color-grade-again-soft: #ef44442e;
+    --color-grade-again-solid: #ef4444;
+    --color-grade-hard: #fcd34d;
+    --color-grade-hard-soft: #f59e0b2e;
+    --color-grade-hard-solid: #f59e0b;
+    --color-grade-good: #6ee7b7;
+    --color-grade-good-soft: #22c55e2e;
+    --color-grade-good-solid: #22c55e;
+    --color-grade-easy: #93c5fd;
+    --color-grade-easy-soft: #3b82f62e;
+    --color-grade-easy-solid: #60a5fa;
+
+    --color-difficulty-easy: #5eead4;
+    --color-difficulty-easy-soft: #14b8a62e;
+    --color-difficulty-medium: #fcd34d;
+    --color-difficulty-medium-soft: #f59e0b2e;
+    --color-difficulty-hard: #fda4af;
+    --color-difficulty-hard-soft: #f43f5e2e;
+
+    --color-urgency-high: #fca5a5;
+    --color-urgency-high-soft: #ef44442e;
+    --color-urgency-medium: #fcd34d;
+    --color-urgency-medium-soft: #f59e0b2e;
+    --color-urgency-low: #a2a9b5;
+    --color-urgency-low-soft: #64748b2e;
+  }
+}
+
+html {
+  /* Lets the UA theme native widgets — checkboxes, range tracks, date pickers,
+     scrollbars — instead of leaving light controls on a dark panel. */
+  color-scheme: light dark;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* The side panel is draggable down to a couple of hundred pixels, and problem
+     titles are unbroken slugs often enough that this is load-bearing: nothing may
+     ever push the layout wider than the panel. */
+  overflow-wrap: break-word;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* Native checkboxes, radios and range sliders inherit the brand colour. */
+  accent-color: var(--color-accent);
+}
+
+/* A single focus treatment everywhere, so keyboard users get the same affordance
+   on links, buttons, inputs and details summaries without each one opting in. */
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+  border-radius: 0.125rem;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
