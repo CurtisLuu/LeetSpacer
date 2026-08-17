@@ -48,7 +48,7 @@ const SOURCES: {
     name: "NeetCode",
     href: "https://neetcode.io/practice",
     blurb:
-      "Your completed problems. Reads what the page has already loaded, so it's instant and issues no requests of its own.",
+      "Your completed problems, plus your submission history — one request per day you were active, so the first sync takes a minute or two.",
   },
 ];
 
@@ -117,7 +117,8 @@ export function App() {
 
           <p className="mt-3 text-xs text-ink-subtle">
             Leave this tab open — it updates as your history arrives. You only need one of
-            the two, and connecting both merges them into a single history.
+            the two, and each keeps its own schedule. There is no sync button anywhere:
+            opening the site is the sync.
           </p>
         </Step>
 
@@ -133,21 +134,30 @@ export function App() {
             <TrackBlurb
               track="leetcode"
               active={track === "leetcode"}
-              body="Reports when you solved each problem, so reviews are scheduled from your real history."
+              body="A timestamp on every submission, so reviews are scheduled from your real history."
             />
             <TrackBlurb
               track="neetcode"
               active={track === "neetcode"}
-              body="Reports what you've completed but not when, so those get spread over the next couple of weeks instead."
+              body="Real dates for anything you solved in its editor. Problems ticked off or solved elsewhere have none, and get spread instead."
             />
           </dl>
 
-          <Callout className="mt-3" title="Why the two schedule differently">
+          <Callout className="mt-3" title="Where the dates come from">
             <p>
-              <strong className="font-medium">LeetCode</strong> exposes a timestamp on every submission, so those cards are backfilled with your real solve dates — a problem you last passed in March is scheduled as a problem last seen in March.
+              Both sites are read for submission history — timestamps, verdicts and attempt
+              counts — and a problem scheduled from when you actually solved it beats one
+              scheduled from when the extension first heard about it.
             </p>
             <p className="mt-1">
-              <strong className="font-medium">NeetCode</strong> reports that a problem is complete but never when, so there is no history to backfill from. LeetSpacer generates its own schedule for those, spread from the day you sync.
+              <strong className="font-medium">NeetCode</strong> only records that history for
+              problems you solved in its own editor. Anything you ticked off by hand, or
+              solved on LeetCode and marked complete, has no date attached — those get spread
+              across a window instead, which you can change in settings.
+            </p>
+            <p className="mt-1">
+              The two are kept apart: what LeetCode knows about a problem and what NeetCode
+              knows are separate records, never merged.
             </p>
           </Callout>
         </Step>
@@ -155,7 +165,7 @@ export function App() {
         <Step
           n={3}
           title="Review"
-          body="Click the LeetSpacer icon in your toolbar whenever the badge shows a number. Rate each problem from memory before you open it — the rating is what schedules the next one."
+          body="Click the LeetSpacer icon in your toolbar whenever the badge shows a number. Rate each problem from memory before you open it — the rating is what schedules the next one, and nothing comes back sooner than the minimum lock in settings."
         >
           <Button
             variant="primary"
