@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   ButtonLink,
+  Callout,
   Card,
   CheckIcon,
   ExternalIcon,
@@ -140,6 +141,15 @@ export function App() {
               body="Reports what you've completed but not when, so those get spread over the next couple of weeks instead."
             />
           </dl>
+
+          <Callout className="mt-3" title="Why the two schedule differently">
+            <p>
+              <strong className="font-medium">LeetCode</strong> exposes a timestamp on every submission, so those cards are backfilled with your real solve dates — a problem you last passed in March is scheduled as a problem last seen in March.
+            </p>
+            <p className="mt-1">
+              <strong className="font-medium">NeetCode</strong> reports that a problem is complete but never when, so there is no history to backfill from. LeetSpacer generates its own schedule for those, spread from the day you sync.
+            </p>
+          </Callout>
         </Step>
 
         <Step
