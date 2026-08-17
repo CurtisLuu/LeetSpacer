@@ -1,6 +1,7 @@
 import {
   Button,
   Callout,
+  Logo,
   ProviderCard,
   Section,
   Stat,
@@ -21,9 +22,12 @@ export function App() {
   return (
     <div className="flex min-h-screen flex-col gap-4 p-4 text-sm">
       <header className="space-y-3">
-        <div>
-          <h1 className="text-base font-semibold">LeetSpacer</h1>
-          <p className="text-xs text-ink-muted">Everything stays on this device.</p>
+        <div className="flex items-center gap-2">
+          <Logo className="size-7" />
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold">LeetSpacer</h1>
+            <p className="text-xs text-ink-muted">Everything stays on this device.</p>
+          </div>
         </div>
 
         <TrackSwitcher

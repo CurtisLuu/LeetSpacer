@@ -9,7 +9,9 @@ import {
   Card,
   CheckIcon,
   ExternalIcon,
+  Logo,
   TRACK_LABELS,
+  Wordmark,
   TrackSwitcher,
 } from "../../components/ui";
 import { cx } from "../../components/cx";
@@ -60,9 +62,14 @@ export function App() {
   return (
     <main className="mx-auto max-w-2xl px-6 py-10 text-sm">
       <header className="mb-8">
-        <div className="mb-3 flex items-center gap-2.5">
-          <Logo />
-          <h1 className="text-xl font-semibold">LeetSpacer</h1>
+        <div className="mb-3 flex items-center gap-3">
+          <Logo className="size-11" />
+          <div>
+            <h1>
+              <Wordmark className="text-2xl" />
+            </h1>
+            <p className="text-xs text-ink-subtle">spaced repetition for leetcode</p>
+          </div>
         </div>
         <p className="text-base text-ink-muted">
           Stop re-solving the problems you already know. LeetSpacer schedules reviews from
@@ -260,17 +267,5 @@ function TrackBlurb({
       <dt className="font-medium text-ink">{TRACK_LABELS[track]}</dt>
       <dd className="mt-0.5 text-ink-muted">{body}</dd>
     </div>
-  );
-}
-
-/** The extension's own mark, inline so the page needs no image request. */
-function Logo() {
-  return (
-    <svg viewBox="0 0 32 32" className="size-7 shrink-0" aria-hidden>
-      <rect width="32" height="32" rx="7" className="fill-accent" />
-      <circle cx="6.7" cy="16" r="1.8" className="fill-accent-ink" />
-      <circle cx="13.8" cy="16" r="2.5" className="fill-accent-ink" />
-      <circle cx="23.7" cy="16" r="3.4" className="fill-accent-ink" />
-    </svg>
   );
 }

@@ -181,6 +181,11 @@ there is nothing to keep in sync.
 Icons regenerate with `pnpm --filter @lcs/extension icons` if the mark ever changes. They
 are committed, so a normal build needs no Python.
 
+Note that 48 and 128 render the mark faithfully — pale face, purple deck behind — while 16
+and 32 invert to a filled accent card with light braces. The pale face is invisible against
+a white browser toolbar, and by 16px the braces are thinner than a pixel. The store listing
+uses the 128, so what a reviewer sees is the real artwork.
+
 ---
 
 ## What review will probably ask about

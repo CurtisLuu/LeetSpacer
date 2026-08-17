@@ -11,6 +11,7 @@ import {
   Button,
   Callout,
   InfoDot,
+  Logo,
   Section,
   TRACK_LABELS,
   Tooltip,
@@ -134,11 +135,14 @@ export function App() {
   return (
     <main className="mx-auto max-w-xl space-y-6 p-6 text-sm">
       <header className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h1 className="text-lg font-semibold">LeetSpacer</h1>
-          <p className="text-xs text-ink-muted">
-            All data is stored locally in this browser and is never sent anywhere.
-          </p>
+        <div className="flex items-start gap-2.5">
+          <Logo className="mt-0.5 size-8" />
+          <div>
+            <h1 className="text-lg font-semibold">LeetSpacer</h1>
+            <p className="text-xs text-ink-muted">
+              All data is stored locally in this browser and is never sent anywhere.
+            </p>
+          </div>
         </div>
         <Button variant="ghost" size="sm" onClick={openWelcome}>
           Getting started
