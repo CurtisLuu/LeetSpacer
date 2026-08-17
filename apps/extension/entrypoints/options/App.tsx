@@ -147,7 +147,7 @@ export function App() {
 
       <Section
         title="Your history"
-        description="Both sources read the session you're already signed in with. No button, no token, no account."
+        description="Both sites are supported. LeetCode reports when you solved each problem; NeetCode reports only that you did — so LeetCode reviews are dated and NeetCode's are spread."
       >
         <div className="space-y-3 rounded-lg border border-border bg-surface-raised p-3">
           <div className="space-y-1">

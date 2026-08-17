@@ -124,7 +124,7 @@ export function App() {
           n={2}
           title="Pick where to start"
           done={anySynced}
-          body="Two independent schedules. The selector at the top of the side panel switches between them at any time, so this is only a starting point."
+          body="Both sites are supported, with one difference between them. Switch tracks any time from the top of the side panel."
         >
           <TrackSwitcher value={track ?? "neetcode"} onChange={setTrack} disabled={track === null} />
 
@@ -132,12 +132,12 @@ export function App() {
             <TrackBlurb
               track="leetcode"
               active={track === "leetcode"}
-              body="Everything you've ever solved, scheduled from when you actually solved it. Usually the larger of the two."
+              body="Reports when you solved each problem, so reviews are scheduled from your real history."
             />
             <TrackBlurb
               track="neetcode"
               active={track === "neetcode"}
-              body="Your NeetCode curriculum. Dateless, so it's fanned across a couple of weeks rather than landing all at once."
+              body="Reports what you've completed but not when, so those get spread over the next couple of weeks instead."
             />
           </dl>
         </Step>
