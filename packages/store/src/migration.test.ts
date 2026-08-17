@@ -1,10 +1,10 @@
 import "fake-indexeddb/auto";
 
-import type { ProblemState } from "@lcs/core";
+import type { ProviderId } from "@lcs/core";
 import { openDB } from "idb";
 import { describe, expect, it } from "vitest";
 
-import { createIdbStore, openLcsDb } from "./idb-store.js";
+import { createDefaultStore, createIdbStore, openLcsDb } from "./idb-store.js";
 
 /**
  * Upgrading a real user's database from before the track split.
@@ -19,7 +19,8 @@ const DAY = 86_400_000;
 
 let dbCounter = 0;
 
-function problem(slug: string, sources: ProblemState["sources"]): ProblemState {
+/** Shaped as version 1 stored it: one row per slug, listing its sources. */
+function problem(slug: string, sources: ProviderId[]) {
   return {
     slug,
     status: "solved",
@@ -176,12 +177,20 @@ describe("upgrading a version 1 database", () => {
     expect(await store.logs.forProblem("neetcode", "two-sum")).toEqual([]);
   });
 
-  it("leaves the other stores alone", async () => {
+  it("leaves events and settings alone", async () => {
     const store = await migrated();
 
-    expect(await store.problems.all()).toHaveLength(3);
     expect((await store.settings.get()).activeTrack).toBe("leetcode");
     expect(await store.events.count()).toBe(2);
+  });
+
+  it("empties problem state, because the merged rows can't be split", async () => {
+    // v4 keys problem state by (provider, slug). The old rows carried a solve date from
+    // one site and an attempt count from the other, so there is nothing to attribute —
+    // they're dropped here and refolded from the log on the next open.
+    const store = await migrated();
+
+    expect(await store.problems.all()).toEqual([]);
   });
 
   it("backfills the provider index over events that predate it", async () => {
@@ -201,6 +210,37 @@ describe("upgrading a version 1 database", () => {
 
     const neetcode = await store.cards.due("neetcode", T0 + 10 * DAY);
     expect(neetcode.map((c) => c.slug)).toEqual(["is-anagram", "orphan"]);
+  });
+
+  it("refolds problem state per provider when opened the normal way", async () => {
+    dbCounter += 1;
+    const name = await seedLegacyDb(`lcs-migration-rebuild-${dbCounter}`);
+    const store = await createDefaultStore(name);
+
+    // One row per (provider, slug), each carrying only what that provider observed.
+    const leetcode = await store.problems.get("leetcode", "two-sum");
+    const neetcode = await store.problems.get("neetcode", "is-anagram");
+
+    expect(leetcode).toMatchObject({ provider: "leetcode", attempts: 1, hasDatedSolve: true });
+    expect(neetcode).toMatchObject({ provider: "neetcode", attempts: 0, hasDatedSolve: false });
+
+    // And no cross-contamination: neither provider gained the other's problem.
+    expect(await store.problems.get("neetcode", "two-sum")).toBeUndefined();
+    expect(await store.problems.get("leetcode", "is-anagram")).toBeUndefined();
+  });
+
+  it("doesn't refold a database that already has state", async () => {
+    dbCounter += 1;
+    const name = await seedLegacyDb(`lcs-migration-norebuild-${dbCounter}`);
+    const first = await createDefaultStore(name);
+    await first.problems.put([
+      { ...(await first.problems.get("leetcode", "two-sum"))!, attempts: 99 },
+    ]);
+
+    // A second open must leave the store as it found it, or every restart would discard
+    // whatever the last sync wrote.
+    const second = await createDefaultStore(name);
+    expect((await second.problems.get("leetcode", "two-sum"))?.attempts).toBe(99);
   });
 
   it("is idempotent — reopening an already-migrated database changes nothing", async () => {

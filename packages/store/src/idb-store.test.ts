@@ -177,7 +177,7 @@ describe("IndexedDB store", () => {
     await restored.importSnapshot(snapshot, "replace");
 
     expect(await restored.events.count()).toBe(3);
-    expect((await restored.problems.get("two-sum"))?.acceptedCount).toBe(1);
+    expect((await restored.problems.get("leetcode", "two-sum"))?.acceptedCount).toBe(1);
   });
 
   it("agrees with the in-memory reference implementation", async () => {
@@ -196,21 +196,21 @@ describe("IndexedDB store", () => {
     await ingestEvents(store, SAMPLE);
 
     const removedEvents = await store.events.remove([SAMPLE[0]!.id, "does-not-exist"]);
-    const removedProblems = await store.problems.remove(["two-sum", "never-tracked"]);
+    const removedProblems = await store.problems.remove("leetcode", ["two-sum", "never-tracked"]);
 
     // Only what actually existed is counted, so callers can report honestly.
     expect(removedEvents).toBe(1);
     expect(removedProblems).toBe(1);
     expect(await store.events.count()).toBe(2);
-    expect(await store.problems.get("two-sum")).toBeUndefined();
-    expect(await store.problems.get("valid-anagram")).toBeDefined();
+    expect(await store.problems.get("leetcode", "two-sum")).toBeUndefined();
+    expect(await store.problems.get("leetcode", "valid-anagram")).toBeDefined();
   });
 
   it("removing nothing is a no-op", async () => {
     await ingestEvents(store, SAMPLE);
 
     expect(await store.events.remove([])).toBe(0);
-    expect(await store.problems.remove([])).toBe(0);
+    expect(await store.problems.remove("leetcode", [])).toBe(0);
     expect(await store.events.count()).toBe(3);
   });
 

@@ -6,6 +6,7 @@ import {
   type Settings,
   type Store,
   type StoreSnapshot,
+  rebuildFromLog,
   trackForLegacyCard,
   withDefaults,
 } from "@lcs/core";
@@ -23,11 +24,7 @@ export function openLcsDb(name = DB_NAME): Promise<LcsDatabase> {
         events.createIndex("observedAt", "observedAt");
         events.createIndex("provider", "provider");
       }
-      if (!db.objectStoreNames.contains("problems")) {
-        const problems = db.createObjectStore("problems", { keyPath: "slug" });
-        problems.createIndex("status", "status");
-        problems.createIndex("lastSolvedAt", "lastSolvedAt");
-      }
+      if (!db.objectStoreNames.contains("problems")) createProblemStore(db);
       if (!db.objectStoreNames.contains("kv")) {
         db.createObjectStore("kv");
       }
@@ -50,8 +47,23 @@ export function openLcsDb(name = DB_NAME): Promise<LcsDatabase> {
       if (!events.indexNames.contains("provider")) {
         events.createIndex("provider", "provider");
       }
+
+      // v4: problem state split per provider. The merged rows carried a solve date from
+      // one site and an attempt count from the other, so there is nothing to attribute
+      // and no way to split them — they're dropped and refolded from the log instead,
+      // which loses nothing because the log is the source of truth. `rebuildFromLog`
+      // runs on next open; see `createDefaultStore`.
+      if (oldVersion < 4 && db.objectStoreNames.contains("problems")) {
+        db.deleteObjectStore("problems");
+        createProblemStore(db);
+      }
     },
   });
+}
+
+function createProblemStore(db: IDBPDatabase<LcsDB>): void {
+  const problems = db.createObjectStore("problems", { keyPath: ["provider", "slug"] });
+  problems.createIndex("provider", "provider");
 }
 
 function createCardStore(db: IDBPDatabase<LcsDB>): void {
@@ -160,30 +172,31 @@ export function createIdbStore(db: LcsDatabase): Store {
     },
 
     problems: {
-      async get(slug) {
-        return db.get("problems", slug);
+      async get(provider, slug) {
+        return db.get("problems", [provider, slug]);
       },
-      async getMany(slugs) {
+      async getMany(provider, slugs) {
         const tx = db.transaction("problems", "readonly");
-        const found = await Promise.all(slugs.map((slug) => tx.store.get(slug)));
+        const found = await Promise.all(slugs.map((slug) => tx.store.get([provider, slug])));
         await tx.done;
         return found.filter((s): s is ProblemState => s !== undefined);
       },
-      async all() {
-        return db.getAll("problems");
+      async all(provider) {
+        if (provider === undefined) return db.getAll("problems");
+        return db.getAllFromIndex("problems", "provider", provider);
       },
       async put(states) {
         const tx = db.transaction("problems", "readwrite");
         await Promise.all(states.map((s) => tx.store.put(s)));
         await tx.done;
       },
-      async remove(slugs) {
+      async remove(provider, slugs) {
         if (slugs.length === 0) return 0;
         const tx = db.transaction("problems", "readwrite");
         let removed = 0;
         for (const slug of slugs) {
-          if ((await tx.store.getKey(slug)) === undefined) continue;
-          await tx.store.delete(slug);
+          if ((await tx.store.getKey([provider, slug])) === undefined) continue;
+          await tx.store.delete([provider, slug]);
           removed += 1;
         }
         await tx.done;
@@ -262,7 +275,7 @@ export function createIdbStore(db: LcsDatabase): Store {
         db.getAll("logs"),
         store.settings.get(),
       ]);
-      return { version: 2, exportedAt: Date.now(), events, problems, cards, logs, settings };
+      return { version: 3, exportedAt: Date.now(), events, problems, cards, logs, settings };
     },
 
     async importSnapshot(snapshot: StoreSnapshot, mode) {
@@ -290,9 +303,23 @@ export function createIdbStore(db: LcsDatabase): Store {
   return store;
 }
 
-/** Convenience for the extension: open the database and wrap it in one call. */
+/**
+ * Convenience for the extension: open the database and wrap it in one call.
+ *
+ * Refolds problem state from the log when the store is empty but events exist. That is
+ * exactly the situation the v4 upgrade leaves behind, and it's also a general repair —
+ * the log is the source of truth, so rebuilding from it can only ever be correct.
+ */
 export async function createDefaultStore(name = DB_NAME): Promise<Store> {
-  return createIdbStore(await openLcsDb(name));
+  const store = createIdbStore(await openLcsDb(name));
+
+  const [problems, events] = await Promise.all([store.problems.all(), store.events.count()]);
+  if (problems.length === 0 && events > 0) {
+    const rebuilt = await rebuildFromLog(store);
+    console.info(`[lcs] rebuilt ${rebuilt} problem states from ${events} events`);
+  }
+
+  return store;
 }
 
 export type { ProblemState, ProgressEvent, ReviewCard, ReviewLog };

@@ -1,4 +1,5 @@
-import type { ProblemState, ReviewCard, ReviewLog, TrackId } from "./model.js";
+import { foldEvents } from "./events.js";
+import type { ProviderId, ReviewCard, ReviewLog, TrackId } from "./model.js";
 import type { StoreSnapshot } from "./store.js";
 
 /**
@@ -36,9 +37,9 @@ export function parseSnapshot(text: string): StoreSnapshot {
     );
   }
 
-  if (candidate.version !== 1 && candidate.version !== 2) {
+  if (candidate.version !== 1 && candidate.version !== 2 && candidate.version !== 3) {
     throw new Error(
-      `Expected a snapshot with version 1 or 2, found ${JSON.stringify(candidate.version)}.`,
+      `Expected a snapshot with version 1, 2 or 3, found ${JSON.stringify(candidate.version)}.`,
     );
   }
 
@@ -48,14 +49,48 @@ export function parseSnapshot(text: string): StoreSnapshot {
     }
   }
 
-  return candidate.version === 1
-    ? migrateV1(candidate as unknown as LegacySnapshot)
-    : (candidate as StoreSnapshot);
+  if (candidate.version === 1) return splitProblems(migrateV1(candidate as unknown as LegacySnapshot));
+  if (candidate.version === 2) return splitProblems(candidate as unknown as V2Snapshot);
+  return candidate as StoreSnapshot;
+}
+
+/** Version 2 and earlier: one problem row per slug, shared by both providers. */
+interface V2Snapshot extends Omit<StoreSnapshot, "version" | "problems"> {
+  version: 1 | 2;
+  problems: unknown[];
+}
+
+/**
+ * Rebuild problem state per provider by re-folding the event log.
+ *
+ * The merged rows can't be split apart — a solve date from one site and an attempt count
+ * from the other leave nothing to attribute. The log can, because every event records
+ * which provider it came from, so folding it again produces exactly the rows the current
+ * model would have written. Nothing is lost: the log is the source of truth and it is
+ * carried through untouched.
+ */
+function splitProblems(snapshot: V2Snapshot): StoreSnapshot {
+  return {
+    ...snapshot,
+    version: 3,
+    problems: [...foldEvents(new Map(), snapshot.events).values()],
+  };
+}
+
+/**
+ * A problem row as version 1 stored it: one per slug, listing every provider that had
+ * said anything about it. Kept as its own type because the current model has no such
+ * field, and the migration is the last code that will ever see one.
+ */
+export interface LegacyProblemState {
+  slug: string;
+  sources?: ProviderId[];
 }
 
 /** A version 1 snapshot: cards and logs keyed by slug alone, before tracks existed. */
-interface LegacySnapshot extends Omit<StoreSnapshot, "version" | "cards" | "logs"> {
+interface LegacySnapshot extends Omit<StoreSnapshot, "version" | "cards" | "logs" | "problems"> {
   version: 1;
+  problems: LegacyProblemState[];
   cards: Omit<ReviewCard, "track">[];
   logs: Omit<ReviewLog, "track">[];
 }
@@ -68,11 +103,11 @@ interface LegacySnapshot extends Omit<StoreSnapshot, "version" | "cards" | "logs
  * with no recorded source at all goes to NeetCode, since that was the only working data
  * path before the LeetCode adapter existed.
  */
-export function trackForLegacyCard(problem: ProblemState | undefined): TrackId {
-  return problem?.sources.includes("leetcode") ? "leetcode" : "neetcode";
+export function trackForLegacyCard(problem: LegacyProblemState | undefined): TrackId {
+  return problem?.sources?.includes("leetcode") ? "leetcode" : "neetcode";
 }
 
-function migrateV1(snapshot: LegacySnapshot): StoreSnapshot {
+function migrateV1(snapshot: LegacySnapshot): V2Snapshot {
   const problems = new Map(snapshot.problems.map((problem) => [problem.slug, problem]));
   const trackFor = (slug: string) => trackForLegacyCard(problems.get(slug));
 

@@ -7,7 +7,7 @@
  */
 
 import { foldEvents } from "./events.js";
-import type { ProblemState, ProgressEvent } from "./model.js";
+import { type ProblemState, type ProgressEvent, type ProviderId, problemKey } from "./model.js";
 import type { Store } from "./store.js";
 
 export interface IngestResult {
@@ -26,9 +26,21 @@ export async function ingestEvents(
     return { received: incoming.length, inserted: 0, updatedProblems: [] };
   }
 
-  const slugs = [...new Set(inserted.map((e) => e.slug))];
-  const existing = await store.problems.getMany(slugs);
-  const initial = new Map<string, ProblemState>(existing.map((s) => [s.slug, s]));
+  // Grouped by provider, because state is now addressed by both. Loading a NeetCode row
+  // to fold a LeetCode event would resurrect exactly the merge this split removed.
+  const wanted = new Map<ProviderId, Set<string>>();
+  for (const event of inserted) {
+    const slugs = wanted.get(event.provider) ?? new Set<string>();
+    slugs.add(event.slug);
+    wanted.set(event.provider, slugs);
+  }
+
+  const initial = new Map<string, ProblemState>();
+  for (const [provider, slugs] of wanted) {
+    for (const state of await store.problems.getMany(provider, [...slugs])) {
+      initial.set(problemKey(state.provider, state.slug), state);
+    }
+  }
 
   const folded = foldEvents(initial, inserted);
   await store.problems.put([...folded.values()]);

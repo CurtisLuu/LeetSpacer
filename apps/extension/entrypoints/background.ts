@@ -188,7 +188,7 @@ export default defineBackground(() => {
       // Most overdue first — those are the ones closest to being forgotten.
       const selected = [...allDue].sort((a, b) => a.due - b.due).slice(0, cap);
 
-      const items = await toReviewItems(selected, settings.problemLinkTarget, now);
+      const items = await toReviewItems(selected, track, settings.problemLinkTarget, now);
 
       return {
         items,
@@ -212,7 +212,7 @@ export default defineBackground(() => {
       // Soonest first, so the ones about to unlock are at the top where a countdown is
       // worth reading.
       const sorted = [...cards].sort((a, b) => a.due - b.due);
-      return { items: await toReviewItems(sorted, settings.problemLinkTarget, now), track };
+      return { items: await toReviewItems(sorted, track, settings.problemLinkTarget, now), track };
     },
 
     "data:changed": async () => {
@@ -281,11 +281,13 @@ export default defineBackground(() => {
  */
 async function toReviewItems(
   cards: readonly ReviewCard[],
+  track: TrackId,
   linkTarget: ProviderId,
   now: number,
 ): Promise<ReviewItem[]> {
   const store = await getStore();
-  const states = await store.problems.getMany(cards.map((card) => card.slug));
+  // Scoped to the track's own provider: its attempt counts and dates, nobody else's.
+  const states = await store.problems.getMany(track, cards.map((card) => card.slug));
   const byslug = new Map(states.map((state) => [state.slug, state]));
 
   // Slugs are LeetCode titleSlugs, so the bundled catalog resolves real titles,
@@ -393,11 +395,7 @@ async function getCatalogStats(): Promise<{ count: number; generatedAt: string |
 async function buildStatus(): Promise<SyncStatus> {
   const store = await getStore();
   const now = Date.now();
-  const [settings, problems, catalog] = await Promise.all([
-    store.settings.get(),
-    store.problems.all(),
-    getCatalogStats(),
-  ]);
+  const [settings, catalog] = await Promise.all([store.settings.get(), getCatalogStats()]);
 
   const providers: ProviderStatus[] = ACTIVE_PROVIDERS.map((id) => ({
     provider: id,
@@ -411,18 +409,23 @@ async function buildStatus(): Promise<SyncStatus> {
   // Reported for every track, not just the active one, so the selector can show what's
   // waiting in the track you're not looking at.
   const tracks = {} as SyncStatus["tracks"];
+  let tracked = 0;
+  let solved = 0;
   for (const track of TRACK_IDS) {
-    const [cards, due, events] = await Promise.all([
+    const [cards, due, events, problems] = await Promise.all([
       store.cards.all(track),
       store.cards.due(track, now),
       // Scoped to the provider that feeds this track. A combined total sitting between
       // two track-scoped numbers reads as a bug, because it looks like one of the three
       // is counting something else — which it was.
       store.events.count(track),
+      store.problems.all(track),
     ]);
+    tracked += problems.length;
+    solved += problems.filter((p) => p.status === "solved").length;
     tracks[track] = {
       tracked: cards.length,
-      solved: problems.filter((p) => p.status === "solved" && p.sources.includes(track)).length,
+      solved: problems.filter((p) => p.status === "solved").length,
       due: due.length,
       events,
     };
@@ -433,8 +436,8 @@ async function buildStatus(): Promise<SyncStatus> {
     providers,
     tracks,
     activeTrack: settings.activeTrack,
-    problemsTracked: problems.length,
-    solved: problems.filter((p) => p.status === "solved").length,
+    problemsTracked: tracked,
+    solved,
     catalog,
   };
 }

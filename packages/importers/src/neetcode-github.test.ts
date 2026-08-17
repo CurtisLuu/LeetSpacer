@@ -160,7 +160,7 @@ describe("buildSnapshot", () => {
   it("produces a snapshot the store can import", () => {
     const { snapshot } = buildSnapshot(submissions, { now: NOW });
 
-    expect(snapshot.version).toBe(2);
+    expect(snapshot.version).toBe(3);
     expect(snapshot.settings.providers.neetcode.lastFullSyncAt).toBe(NOW);
     // A NeetCode GitHub Sync repo is NeetCode history, so it belongs to that track.
     expect(snapshot.cards.every((card) => card.track === "neetcode")).toBe(true);

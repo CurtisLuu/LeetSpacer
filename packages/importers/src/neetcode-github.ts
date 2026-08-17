@@ -154,7 +154,7 @@ export function buildSnapshot(
     .filter((at): at is number => at !== null);
 
   const snapshot: StoreSnapshot = {
-    version: 2,
+    version: 3,
     exportedAt: options.now,
     events,
     problems,

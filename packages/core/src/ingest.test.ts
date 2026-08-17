@@ -28,8 +28,8 @@ describe("ingestEvents", () => {
       submission("two-sum", T0 + 60_000, "accepted"),
     ]);
 
-    expect(result).toEqual({ received: 2, inserted: 2, updatedProblems: ["two-sum"] });
-    expect((await store.problems.get("two-sum"))?.status).toBe("solved");
+    expect(result).toEqual({ received: 2, inserted: 2, updatedProblems: ["leetcode:two-sum"] });
+    expect((await store.problems.get("leetcode", "two-sum"))?.status).toBe("solved");
     expect(await store.events.count()).toBe(2);
   });
 
@@ -41,13 +41,13 @@ describe("ingestEvents", () => {
     ];
 
     await ingestEvents(store, events);
-    const before = await store.problems.get("two-sum");
+    const before = await store.problems.get("leetcode", "two-sum");
 
     const second = await ingestEvents(store, events);
 
     expect(second.inserted).toBe(0);
     expect(second.updatedProblems).toEqual([]);
-    expect(await store.problems.get("two-sum")).toEqual(before);
+    expect(await store.problems.get("leetcode", "two-sum")).toEqual(before);
     expect(await store.events.count()).toBe(2);
   });
 
@@ -60,7 +60,7 @@ describe("ingestEvents", () => {
       submission("two-sum", T0 + DAY, "accepted"), // new
     ]);
 
-    const state = await store.problems.get("two-sum");
+    const state = await store.problems.get("leetcode", "two-sum");
     expect(state?.attempts).toBe(2);
     expect(state?.acceptedCount).toBe(1);
   });
