@@ -9,7 +9,8 @@ import {
   Tooltip,
   TrackSwitcher,
 } from "../../components/ui";
-import { openProblems } from "../../lib/pages";
+import { openProblems, openWelcome } from "../../lib/pages";
+import { useConsent } from "../../lib/use-consent";
 import { useStatus } from "../../lib/use-status";
 import { useTrack } from "../../lib/use-track";
 import { ReviewQueue } from "./ReviewQueue";
@@ -17,6 +18,7 @@ import { ReviewQueue } from "./ReviewQueue";
 export function App() {
   const { status, error, refresh } = useStatus();
   const { track, setTrack } = useTrack();
+  const { accepted } = useConsent();
 
   const stats = track ? status?.tracks?.[track] : undefined;
 
@@ -42,6 +44,20 @@ export function App() {
           }}
         />
       </header>
+
+      {accepted === false ? (
+        <Callout
+          tone="info"
+          title="Accept the privacy policy to begin"
+          action={
+            <Button variant="primary" size="sm" onClick={openWelcome}>
+              Review
+            </Button>
+          }
+        >
+          Nothing is read from LeetCode or NeetCode until you do.
+        </Callout>
+      ) : null}
 
       {error ? (
         <Callout tone="danger" title="LeetSpacer isn't responding">

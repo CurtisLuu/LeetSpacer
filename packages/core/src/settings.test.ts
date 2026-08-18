@@ -258,3 +258,31 @@ describe("the shared NeetCode sync cursor", () => {
   });
 });
 
+describe("privacy consent", () => {
+  it("starts unaccepted", () => {
+    expect(withDefaults(undefined).privacyAcceptedAt).toBeNull();
+  });
+
+  it("is never inferred for an existing install", () => {
+    // Consent the code assumes on someone's behalf is not consent. An install that
+    // predates the gate has to pass through it like any other.
+    const existing = {
+      settingsVersion: SETTINGS_VERSION,
+      providers: DEFAULT_SETTINGS.providers,
+      activeTrack: "leetcode",
+    } as unknown as Partial<Settings>;
+
+    expect(withDefaults(existing).privacyAcceptedAt).toBeNull();
+  });
+
+  it("keeps an acceptance once given", () => {
+    const accepted = { privacyAcceptedAt: 1_786_929_717_000 } as Partial<Settings>;
+    expect(withDefaults(accepted).privacyAcceptedAt).toBe(1_786_929_717_000);
+  });
+
+  it("survives a round trip", () => {
+    const once = withDefaults({ privacyAcceptedAt: 123 } as Partial<Settings>);
+    expect(withDefaults(once).privacyAcceptedAt).toBe(123);
+  });
+});
+

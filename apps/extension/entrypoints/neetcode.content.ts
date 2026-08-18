@@ -74,7 +74,18 @@ export default defineContentScript({
     // whole content script down — including the passive completed-set read, which works
     // with or without any of the activity machinery.
     try {
-      await send("provider:hello", { provider: "neetcode", url: location.href }).catch(() => {});
+      const hello = await send("provider:hello", {
+        provider: "neetcode",
+        url: location.href,
+      }).catch(() => null);
+
+      // Nothing is read before the privacy policy is accepted — not the page's cached
+      // progress, not its requests, nothing.
+      if (!hello?.consented) {
+        console.info("[lcs] neetcode: waiting for the privacy policy to be accepted");
+        return;
+      }
+
       watchForProgress();
       await syncActivity(ctx.signal);
     } catch (cause) {

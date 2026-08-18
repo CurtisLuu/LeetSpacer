@@ -87,7 +87,11 @@ export interface MessageMap {
   };
   "provider:hello": {
     req: { provider: ProviderId; url: string; username?: string | null };
-    res: { ack: true };
+    /**
+     * `consented` rides along on the greeting every content script already sends, so
+     * gating the read costs no extra round trip.
+     */
+    res: { ack: true; consented: boolean };
   };
   /**
    * Ask the background whether this tab should sync, and how far back.
@@ -102,7 +106,7 @@ export interface MessageMap {
       mode: SyncMode | null;
       since: number;
       /** Why a null mode was returned. Silence here is impossible to diagnose from. */
-      reason?: "disabled" | "in-flight" | "too-soon";
+      reason?: "disabled" | "in-flight" | "too-soon" | "not-accepted";
     };
   };
   /** Release the claim and record the outcome. Must follow every successful claim. */

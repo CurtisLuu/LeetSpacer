@@ -14,6 +14,7 @@ import {
   TrackSwitcher,
 } from "../../components/ui";
 import { cx } from "../../components/cx";
+import { useConsent } from "../../lib/use-consent";
 import { useStatus } from "../../lib/use-status";
 import { useTrack } from "../../lib/use-track";
 
@@ -54,6 +55,7 @@ const SOURCES: {
 export function App() {
   const { status } = useStatus(2_000);
   const { track, setTrack } = useTrack();
+  const { accepted, accept } = useConsent();
 
   const solvedFor = (provider: ProviderId) => status?.tracks?.[provider]?.solved ?? 0;
   const anySynced = SOURCES.some((source) => solvedFor(source.id) > 0);
@@ -70,7 +72,11 @@ export function App() {
         </div>
       </header>
 
-      <ol className="space-y-4">
+      {accepted === false ? <Consent onAccept={accept} /> : null}
+
+      {/* The steps stay out of the way until there is consent — offering "Open LeetCode"
+          above an unaccepted policy would be asking for the thing the policy covers. */}
+      <ol className={accepted ? "space-y-4" : "pointer-events-none space-y-4 opacity-40"}>
         <Step
           n={1}
           title="Connect your history"
@@ -189,6 +195,36 @@ export function App() {
         </a>
       </footer>
     </main>
+  );
+}
+
+function Consent({ onAccept }: { onAccept: () => void }) {
+  return (
+    <section className="mb-5 rounded-xl border border-accent/30 bg-accent-soft p-4">
+      <h2 className="text-base font-semibold">Before you start</h2>
+      <p className="mt-1.5 text-xs text-ink-muted">
+        LeetSpacer reads your practice history from LeetCode and NeetCode so it can work
+        out what to show you. All of it stays on this device — there is no account, no
+        server, and nothing is ever sent anywhere.
+      </p>
+      <p className="mt-1.5 text-xs text-ink-muted">
+        Nothing is read until you accept.
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <Button variant="primary" onClick={onAccept}>
+          Accept and continue
+        </Button>
+        <a
+          className="text-xs text-accent underline underline-offset-2"
+          href="https://github.com/CurtisLuu/LeetSpacer/blob/main/PRIVACY.md"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Read the privacy policy
+        </a>
+      </div>
+    </section>
   );
 }
 

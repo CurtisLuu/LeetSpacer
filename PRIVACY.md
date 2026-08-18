@@ -5,6 +5,12 @@
 LeetSpacer is a Chrome extension that schedules review sessions over your own coding
 practice history.
 
+## Consent
+
+LeetSpacer reads nothing until you accept this policy. The prompt appears on the welcome
+page the first time the extension runs, and until you accept it no page is read, no request
+is made, and nothing is written to storage.
+
 ## The short version
 
 LeetSpacer does not collect, transmit, sell, or share any of your data. There is no

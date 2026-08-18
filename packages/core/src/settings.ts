@@ -67,6 +67,14 @@ export interface Settings {
   providers: Record<ProviderId, ProviderSettings>;
   /** One independent schedule per track. */
   tracks: Record<TrackId, TrackSettings>;
+  /**
+   * When the privacy policy was accepted, or null if it hasn't been.
+   *
+   * Gates the *reading*, not the interface. Blocking the panel while the content scripts
+   * carried on collecting would be a consent screen in appearance only — nothing is read
+   * from either site until this is set.
+   */
+  privacyAcceptedAt: number | null;
   /** Which track the UI is currently showing. Set by the selector in the side panel. */
   activeTrack: TrackId;
   /**
@@ -128,6 +136,7 @@ export const DEFAULT_SETTINGS: Settings = {
     neetcode: { enabled: true, username: null, lastFullSyncAt: null, lastIncrementalSyncAt: null },
   },
   tracks: { leetcode: LEETCODE_TRACK, neetcode: NEETCODE_TRACK },
+  privacyAcceptedAt: null,
   activeTrack: "neetcode",
   problemLinkTarget: "neetcode",
 };
@@ -246,6 +255,8 @@ export function withDefaults(raw: Partial<Settings> | undefined): Settings {
       leetcode: trackWithDefaults(LEETCODE_TRACK, stored?.tracks?.leetcode, legacy),
       neetcode: trackWithDefaults(NEETCODE_TRACK, stored?.tracks?.neetcode, legacy),
     },
+    // Never defaulted to "accepted": consent that the code assumes is not consent.
+    privacyAcceptedAt: stored?.privacyAcceptedAt ?? null,
     activeTrack: stored?.activeTrack ?? DEFAULT_SETTINGS.activeTrack,
     problemLinkTarget: stored?.problemLinkTarget ?? DEFAULT_SETTINGS.problemLinkTarget,
   };

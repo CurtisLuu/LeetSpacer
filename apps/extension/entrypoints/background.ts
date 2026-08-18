@@ -88,12 +88,20 @@ export default defineBackground(() => {
       connected.add(provider);
       lastFailure.delete(provider);
       if (username) await patchProvider(provider, { username });
-      return { ack: true };
+
+      const { privacyAcceptedAt } = await (await getStore()).settings.get();
+      return { ack: true, consented: privacyAcceptedAt !== null };
     },
 
     "events:ingest": async ({ provider, events, complete }) => {
       connected.add(provider);
       const store = await getStore();
+
+      // The last line of defence: nothing is written before consent, whatever sent it.
+      if ((await store.settings.get()).privacyAcceptedAt === null) {
+        return { received: events.length, inserted: 0, updatedProblems: [] };
+      }
+
       const result = await ingestEvents(store, events);
 
       if (result.inserted > 0) {
@@ -119,6 +127,11 @@ export default defineBackground(() => {
       const state = settings.providers[provider];
       const now = Date.now();
 
+      // Belt and braces. The content scripts stop before they get here, but a sync path
+      // added later shouldn't have to remember to check.
+      if (settings.privacyAcceptedAt === null) {
+        return { mode: null, since: 0, reason: "not-accepted" } as const;
+      }
       if (!state.enabled) return { mode: null, since: 0, reason: "disabled" } as const;
       if (syncing.has(provider)) return { mode: null, since: 0, reason: "in-flight" } as const;
 
