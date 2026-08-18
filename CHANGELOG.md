@@ -1,0 +1,69 @@
+# Changelog
+
+What changed in each released version of LeetSpacer.
+
+This file exists because the Chrome Web Store has nowhere to put it. The store shows a
+version number and an "Updated" date on the listing and nothing else — no release notes
+field in the dashboard, no per-version history page. So this is the record, along with the
+short WHAT'S NEW block at the top of the listing description (see
+[`docs/store-listing.md`](docs/store-listing.md)).
+
+Versions follow the `version` in `apps/extension/package.json`, which is what WXT writes
+into the manifest and what the store displays.
+
+Privacy policy revisions are listed here too. [`PRIVACY.md`](PRIVACY.md) promises its
+history is public, and "read the git log" is only public in a narrow sense — a policy
+change is a thing a user should be able to find without a checkout.
+
+## 1.0.0 — unreleased
+
+First public release. Set the date here when it ships.
+
+Privacy policy revision 1. Nothing to re-accept: this is the first one.
+
+### Scheduling
+
+- FSRS scheduling, the algorithm behind modern Anki, with a tunable retention target per
+  track.
+- A daily review queue, most-overdue first, capped so a backlog can't bury you.
+- Backlog spreading, so importing years of history doesn't land 400 reviews on day one.
+  Only problems with no real solve date are spread — a genuine date is better information
+  than anything redistribution could invent.
+- A minimum lock per difficulty, so a learning-step interval can't schedule a problem back
+  inside the same session. Re-solving a problem six minutes later measures nothing.
+- Grade a problem after solving it rather than from memory: the verdict arrives from the
+  page.
+
+### Sources
+
+- LeetCode: submission history read from your signed-in session, with real timestamps,
+  verdicts and attempt counts. Verified against a live account on 17 August 2026.
+- NeetCode: completed problems and submission history, so its track schedules from real
+  dates the same way LeetCode's does.
+- Both sync from a content script on the site's own origin. No account, no API token, no
+  button to press.
+- Per-provider problem state, so the two sources can't overwrite each other's scheduling.
+
+### Interface
+
+- Two independent tracks, LeetCode and NeetCode, each with its own schedule and pacing.
+  Neither sets the pace for the other.
+- Side panel with the day's queue, a progress bar counted from the review log, and a look
+  at what's scheduled ahead.
+- A browse tab listing every problem with its unlock countdown.
+- Problems open on NeetCode by default, where the video walkthrough is, falling back to
+  LeetCode for anything NeetCode doesn't host.
+- A get-started page, opened once on install.
+- Sync failures are classified into something you can act on rather than reported as
+  plumbing.
+
+### Privacy
+
+- Nothing is read from either site until the privacy policy is accepted. The gate covers
+  every surface and blocks the reading, not just the interface.
+- A "Don't ask me again when the policy changes" option on that gate. Off unless you turn
+  it on; it carries your acceptance over minor revisions, and never over one that widens
+  what LeetSpacer reads.
+- Everything stays in IndexedDB on your machine. No server, no analytics, nothing
+  transmitted.
+- Export and import your data as JSON.
