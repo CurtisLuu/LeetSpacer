@@ -189,25 +189,33 @@ Loosening either of those turns an arguable position into an indefensible one.
 ### NeetCode
 
 Their [Terms](https://neetcode.io/terms) contain no anti-scraping or anti-automation
-clause, which makes the activity walk materially safer than its LeetCode counterpart. But:
+clause, which makes the activity walk materially safer than its LeetCode counterpart. One
+clause does touch what is shipped here:
 
 > You shall not distribute, publish, transmit, modify, display or create derivative works
 > from material obtained with this service.
 
-`packages/catalog/data/neetcode-slugs.json` is derived from NeetCode's sitemap and app
-bundle, committed to a public repository and shipped inside the extension. That is
-redistribution, and it is the more concrete of the two exposures because it is publication
-rather than access.
+`packages/catalog/data/neetcode-slugs.json` maps LeetCode slugs to NeetCode's, and is
+derived from their `sitemap.xml` — a file published for machines to read, with a
+`robots.txt` that disallows nothing — plus a 73-entry rename table taken from their app
+bundle. 514 of its 588 entries are identity mappings.
 
-It is also the more fixable. In rough order of cost: ask NeetCode for permission; generate
-the map on the user's machine at install rather than committing it; or drop it and link
-every problem to LeetCode.
+Read plainly this is a contract term rather than a copyright one, and the distinction
+matters. The file is factual data with no creative selection or arrangement, which is thin
+ground for a copyright claim and therefore for any takedown mechanism that depends on one.
+The realistic remedy for a terms breach is that NeetCode asks, and the map is removed or
+swapped for LeetCode links. Worth knowing, not worth losing sleep over.
 
-### The asymmetry worth keeping in mind
+Building the map inside the extension instead was considered and rejected on measurement:
+the rename table sits in chunk 84 of 152 content-hashed bundles, and the hashes change on
+every deploy, so there is nothing to cache. Finding it costs about 6 MB per run and up to
+13 MB if it moves. Doing that on every install would put orders of magnitude more load on
+NeetCode than shipping a 32 KB file — worse for them by the measure they would actually
+care about.
 
-The LeetCode item is about *access*, which can be stopped the moment anyone objects. The
-NeetCode item is about *publication*, which has already happened and is cheap to undo
-before anyone asks rather than after.
+Asking NeetCode is a five-minute email that settles it permanently, and the pitch is
+favourable: the map makes their site the default destination for every problem link in the
+extension.
 
 ## Layout
 
