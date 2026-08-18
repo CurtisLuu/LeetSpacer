@@ -81,8 +81,24 @@ export interface Settings {
    * The policy promises that a material change is re-presented before the extension
    * carries on, and a promise in that document that the code doesn't keep is worse than
    * no promise. Bumping `PRIVACY_POLICY_VERSION` is what keeps it.
+   *
+   * Left at whatever revision was actually shown, even once a later one is carried
+   * forward by `privacyAutoAcceptUpdates`. Advancing it would record an acceptance of a
+   * document the user never saw, which is a worse record than an honest older one.
    */
   privacyAcceptedVersion: number | null;
+  /**
+   * Whether the user asked not to be re-prompted when the policy is revised.
+   *
+   * Set from the checkbox on the consent gate, so it is only ever recorded alongside a
+   * real acceptance — there is no path to this being true without the user having read
+   * and accepted the policy at least once.
+   *
+   * It does not carry every revision forward. A revision that expands what is read is
+   * still presented, because pre-consent to a document nobody has written yet is not
+   * consent to whatever it turns out to say. See `PRIVACY_FORCED_REACCEPT_VERSION`.
+   */
+  privacyAutoAcceptUpdates: boolean;
   /** Which track the UI is currently showing. Set by the selector in the side panel. */
   activeTrack: TrackId;
   /**
@@ -146,9 +162,45 @@ export const SETTINGS_VERSION = 3;
  */
 export const PRIVACY_POLICY_VERSION = 1;
 
-/** Has this install accepted the policy as it currently stands? */
-export function hasAcceptedPrivacy(settings: Settings): boolean {
-  return settings.privacyAcceptedVersion === PRIVACY_POLICY_VERSION;
+/**
+ * The earliest revision that everyone must accept in person, `privacyAutoAcceptUpdates`
+ * or not.
+ *
+ * Raise it to the new `PRIVACY_POLICY_VERSION` whenever a revision *expands* the promise
+ * — more read, read from somewhere new, or leaving the device at all. Those are exactly
+ * the changes someone could not have anticipated when they ticked "don't ask me again",
+ * so the tick doesn't cover them.
+ *
+ * Leave it alone for revisions that only narrow the promise or clarify wording. Those are
+ * what the checkbox exists to skip.
+ */
+export const PRIVACY_FORCED_REACCEPT_VERSION = 1;
+
+/**
+ * Has this install accepted the policy as it currently stands?
+ *
+ * The two revision numbers are parameters rather than read straight from the constants so
+ * the version arithmetic can be exercised while both constants still sit at 1 — the same
+ * reason `seedCards` takes `now`. Callers pass neither.
+ */
+export function hasAcceptedPrivacy(
+  settings: Settings,
+  currentVersion: number = PRIVACY_POLICY_VERSION,
+  forcedReacceptVersion: number = PRIVACY_FORCED_REACCEPT_VERSION,
+): boolean {
+  const accepted = settings.privacyAcceptedVersion;
+
+  // Nothing has ever been accepted, so there is no acceptance to carry forward. Checked
+  // first because the carry-forward below must never manufacture consent from scratch.
+  if (accepted === null) return false;
+
+  if (accepted === currentVersion) return true;
+
+  // Accepted something older than the last expanding revision: that revision changed what
+  // they were agreeing to, so it gets presented regardless of the checkbox.
+  if (accepted < forcedReacceptVersion) return false;
+
+  return settings.privacyAutoAcceptUpdates;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -160,6 +212,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tracks: { leetcode: LEETCODE_TRACK, neetcode: NEETCODE_TRACK },
   privacyAcceptedAt: null,
   privacyAcceptedVersion: null,
+  privacyAutoAcceptUpdates: false,
   activeTrack: "neetcode",
   problemLinkTarget: "neetcode",
 };
@@ -281,6 +334,9 @@ export function withDefaults(raw: Partial<Settings> | undefined): Settings {
     // Never defaulted to "accepted": consent that the code assumes is not consent.
     privacyAcceptedAt: stored?.privacyAcceptedAt ?? null,
     privacyAcceptedVersion: stored?.privacyAcceptedVersion ?? null,
+    // Same reasoning as the two above: never defaulted on, only ever stored because the
+    // user ticked the box.
+    privacyAutoAcceptUpdates: stored?.privacyAutoAcceptUpdates ?? false,
     activeTrack: stored?.activeTrack ?? DEFAULT_SETTINGS.activeTrack,
     problemLinkTarget: stored?.problemLinkTarget ?? DEFAULT_SETTINGS.problemLinkTarget,
   };

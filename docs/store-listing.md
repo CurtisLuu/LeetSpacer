@@ -93,6 +93,27 @@ Full policy: https://github.com/CurtisLuu/LeetSpacer/blob/main/PRIVACY.md
 Source code: https://github.com/CurtisLuu/LeetSpacer
 ```
 
+**What's new** — there is no field for this. The dashboard has no release-notes box, and
+the listing shows only a version number and an "Updated" date; a visitor cannot see what
+changed between two versions anywhere on the store. The convention is to paste a short
+block at the *top* of the detailed description above and rewrite it each release.
+
+Nothing to write for 1.0.0 — everything is new. From the second release on, put the
+headline items from that version's [`CHANGELOG.md`](../CHANGELOG.md) entry here, three or
+four lines at most, and move the previous one out:
+
+```
+WHAT'S NEW IN 1.1
+
+• <the change someone would notice>
+• <the next one>
+
+Full history: https://github.com/CurtisLuu/LeetSpacer/blob/main/CHANGELOG.md
+```
+
+If a release changes the privacy policy, say so in this block. It is the only place a
+prospective user sees it before installing.
+
 ---
 
 ## Privacy tab
@@ -184,6 +205,10 @@ file, not the unpacked folder.
 Bump `version` in `apps/extension/package.json` for every resubmission — the store rejects
 a duplicate version number. The manifest has no version of its own; WXT reads that one, so
 there is nothing to keep in sync.
+
+Add the matching [`CHANGELOG.md`](../CHANGELOG.md) entry in the same commit as the bump,
+and refresh the WHAT'S NEW block above. Both are hand-maintained; nothing about the upload
+generates them.
 
 Icons regenerate with `pnpm --filter @lcs/extension icons` if the mark ever changes. They
 are committed, so a normal build needs no Python.

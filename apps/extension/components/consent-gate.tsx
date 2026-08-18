@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
+import { useState } from "react";
 
 import { Button } from "./button";
+import { Checkbox } from "./field";
 import { Logo } from "./logo";
 import { useConsent } from "../lib/use-consent";
 
@@ -18,6 +20,10 @@ const POLICY_URL = "https://github.com/CurtisLuu/LeetSpacer/blob/main/PRIVACY.md
  */
 export function ConsentGate({ children }: { children: ReactNode }) {
   const { accepted, accept } = useConsent();
+  // Unticked by default. A pre-ticked box would collect the standing permission from
+  // people who never decided to give it, which is the whole failure mode this setting
+  // has to avoid.
+  const [skipUpdates, setSkipUpdates] = useState(false);
 
   // `null` means we haven't looked yet. Rendering the gate during that moment would
   // flash a consent screen at someone who accepted months ago.
@@ -52,7 +58,20 @@ export function ConsentGate({ children }: { children: ReactNode }) {
             Nothing is read until you accept.
           </p>
 
-          <Button className="mt-4" variant="primary" block onClick={accept}>
+          <Checkbox
+            className="mt-4"
+            checked={skipUpdates}
+            onChange={(event) => setSkipUpdates(event.currentTarget.checked)}
+            label="Don't ask me again when the policy changes"
+            hint="Minor revisions are accepted for you. Anything that widens what LeetSpacer reads is still shown here first."
+          />
+
+          <Button
+            className="mt-4"
+            variant="primary"
+            block
+            onClick={() => accept(skipUpdates)}
+          >
             Accept and continue
           </Button>
 
