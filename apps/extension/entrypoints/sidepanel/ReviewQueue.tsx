@@ -326,7 +326,7 @@ export function ReviewQueue({ track }: { track: TrackId }) {
 
               {isOpen ? (
                 <div className="mt-2">
-                  <p className="mb-1 text-xs text-ink-muted">How well did you recall it?</p>
+                  <p className="mb-1 text-xs text-ink-muted">How did solving it go?</p>
                   <GradeButtons
                     onGrade={(rating) => void grade(item.slug, rating)}
                     disabled={isBusy}

@@ -146,7 +146,7 @@ export function App() {
         <Step
           n={3}
           title="Review"
-          body="Click the LeetSpacer icon in your toolbar whenever the badge shows a number. Rate each problem from memory before you open it — the rating is what schedules the next one, and nothing comes back sooner than the minimum lock in settings."
+          body="Click the LeetSpacer icon in your toolbar whenever the badge shows a number. Open each problem, solve it, then come back and rate how it went — that rating is what decides when you see it again."
         >
           <Button
             variant="primary"
