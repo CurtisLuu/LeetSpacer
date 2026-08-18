@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_SETTINGS,
+  PRIVACY_FORCED_REACCEPT_VERSION,
   PRIVACY_POLICY_VERSION,
   SETTINGS_VERSION,
   type Settings,
@@ -320,3 +321,49 @@ describe("privacy consent", () => {
   });
 });
 
+describe("privacy re-prompt opt-out", () => {
+  const accepted = (version: number, auto: boolean) =>
+    withDefaults({
+      privacyAcceptedAt: 1_786_929_717_000,
+      privacyAcceptedVersion: version,
+      privacyAutoAcceptUpdates: auto,
+    } as Partial<Settings>);
+
+  it("is off unless it was stored", () => {
+    expect(withDefaults(undefined).privacyAutoAcceptUpdates).toBe(false);
+    expect(withDefaults({} as Partial<Settings>).privacyAutoAcceptUpdates).toBe(false);
+  });
+
+  it("carries an acceptance over a later revision", () => {
+    // Accepted revision 2; the policy has since moved to 3 without widening what is read,
+    // so the forced threshold stays where it was.
+    expect(hasAcceptedPrivacy(accepted(2, true), 3, 1)).toBe(true);
+  });
+
+  it("re-asks over a later revision when the box was left unticked", () => {
+    expect(hasAcceptedPrivacy(accepted(2, false), 3, 1)).toBe(false);
+  });
+
+  it("still re-asks for a revision that widens what is read", () => {
+    // Revision 3 expands the promise, so it raised the forced threshold to itself. The
+    // tick does not cover it.
+    expect(hasAcceptedPrivacy(accepted(2, true), 3, 3)).toBe(false);
+  });
+
+  it("never manufactures a first acceptance", () => {
+    // The tick can only ever be stored alongside an acceptance, but if it somehow arrives
+    // on its own it must not stand in for one.
+    const forged = { privacyAutoAcceptUpdates: true } as Partial<Settings>;
+    expect(hasAcceptedPrivacy(withDefaults(forged))).toBe(false);
+  });
+
+  it("reads the live constants when no revisions are passed", () => {
+    expect(hasAcceptedPrivacy(accepted(PRIVACY_POLICY_VERSION, false))).toBe(true);
+    expect(hasAcceptedPrivacy(accepted(PRIVACY_FORCED_REACCEPT_VERSION - 1, true))).toBe(false);
+  });
+
+  it("survives a round trip", () => {
+    const once = withDefaults({ privacyAutoAcceptUpdates: true } as Partial<Settings>);
+    expect(withDefaults(once).privacyAutoAcceptUpdates).toBe(true);
+  });
+});

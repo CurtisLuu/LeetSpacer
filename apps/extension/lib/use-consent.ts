@@ -12,7 +12,14 @@ import { send } from "./messaging.js";
  */
 export function useConsent(): {
   accepted: boolean | null;
-  accept: () => void;
+  /**
+   * Record acceptance of the policy as it currently stands.
+   *
+   * `autoAcceptUpdates` carries that acceptance forward over later revisions instead of
+   * re-presenting them — the "don't ask me again" tick. It never covers a revision that
+   * expands what is read; see `PRIVACY_FORCED_REACCEPT_VERSION`.
+   */
+  accept: (autoAcceptUpdates?: boolean) => void;
 } {
   const [accepted, setAccepted] = useState<boolean | null>(null);
 
@@ -31,10 +38,17 @@ export function useConsent(): {
     };
   }, []);
 
-  const accept = useCallback(() => {
+  const accept = useCallback((autoAcceptUpdates = false) => {
     setAccepted(true);
     void send("settings:update", {
-      patch: { privacyAcceptedAt: Date.now(), privacyAcceptedVersion: PRIVACY_POLICY_VERSION },
+      patch: {
+        privacyAcceptedAt: Date.now(),
+        privacyAcceptedVersion: PRIVACY_POLICY_VERSION,
+        // Written on every accept, including `false`, so unticking the box on a
+        // re-presented revision actually withdraws the earlier standing permission
+        // rather than leaving it set from last time.
+        privacyAutoAcceptUpdates: autoAcceptUpdates,
+      },
     }).catch(() => {
       setAccepted(false);
     });
