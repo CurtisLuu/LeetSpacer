@@ -159,6 +159,56 @@ declined sync now reports *why* rather than returning a bare null, for the same 
 Note that the LeetCode adapter has never been through any of this. It works, but it was
 written the same way — from a reading of endpoints, with the environment assumed.
 
+## Terms and limitations
+
+Read on 17 August 2026. Not legal advice — recorded so the position is known rather than
+assumed, and so the next person doesn't have to rediscover it.
+
+### LeetCode
+
+Their [Terms](https://leetcode.com/terms/) prohibit automated access in broad language:
+
+> Activities such as "crawling," "scraping," or "spidering" any part of the Service … are
+> strictly forbidden.
+
+There is no exception for reading your own data. LeetSpacer walks `/api/submissions/`
+programmatically, which a broad reading covers. The argument against is that this is one
+user reading their own account from their own signed-in browser at roughly the rate a
+person browsing would generate — but the clause does not say that, so it is a grey area
+entered knowingly rather than a settled one.
+
+Two adjacent restrictions are satisfied deliberately, and should stay satisfied:
+
+- *"any process that operates while you are not logged into the platform"* — the sync only
+  runs inside a signed-in tab, never in the background worker.
+- *"placing an undue load on its infrastructure"* — every request goes through
+  `createThrottle` at roughly one per second with jitter, and the history walk is capped.
+
+Loosening either of those turns an arguable position into an indefensible one.
+
+### NeetCode
+
+Their [Terms](https://neetcode.io/terms) contain no anti-scraping or anti-automation
+clause, which makes the activity walk materially safer than its LeetCode counterpart. But:
+
+> You shall not distribute, publish, transmit, modify, display or create derivative works
+> from material obtained with this service.
+
+`packages/catalog/data/neetcode-slugs.json` is derived from NeetCode's sitemap and app
+bundle, committed to a public repository and shipped inside the extension. That is
+redistribution, and it is the more concrete of the two exposures because it is publication
+rather than access.
+
+It is also the more fixable. In rough order of cost: ask NeetCode for permission; generate
+the map on the user's machine at install rather than committing it; or drop it and link
+every problem to LeetCode.
+
+### The asymmetry worth keeping in mind
+
+The LeetCode item is about *access*, which can be stopped the moment anyone objects. The
+NeetCode item is about *publication*, which has already happened and is cheap to undo
+before anyone asks rather than after.
+
 ## Layout
 
 | Path | What lives there |
