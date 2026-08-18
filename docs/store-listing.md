@@ -137,6 +137,14 @@ in the privacy policy and the listing.
 Then tick all three certifications: no selling to third parties, no use outside the single
 purpose, no use for creditworthiness or lending.
 
+**Consent**
+
+The extension reads nothing from either site until the privacy policy is accepted on the
+welcome page it opens at install. That gate covers the content scripts, not just the
+interface — before acceptance, no page is read, no request is made, and nothing is written
+to storage. Worth mentioning in the review notes, since it is the question the host
+permissions invite.
+
 **Privacy policy URL**
 
 ```

@@ -64,7 +64,7 @@ export interface GradeButtonProps {
 }
 
 /**
- * One FSRS answer. Colour carries the meaning — red through blue is the recall
+ * One grade. Colour carries the meaning — red through blue is the recall
  * scale — but the word is always present, so the control never depends on colour
  * alone.
  */

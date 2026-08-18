@@ -1,4 +1,4 @@
-import type { GraphqlOperation, LeetcodeTransport } from "@lcs/providers";
+import { type GraphqlOperation, type LeetcodeTransport, SyncError } from "@lcs/providers";
 
 /**
  * Same-origin access to leetcode.com, for use from a content script on that origin.
@@ -18,8 +18,14 @@ function csrfToken(): string | null {
 }
 
 async function readJson(response: Response, what: string): Promise<unknown> {
+  if (response.status === 401 || response.status === 403) {
+    throw new SyncError("session-expired", `LeetCode ${what} rejected the session`);
+  }
   if (!response.ok) {
-    throw new Error(`LeetCode ${what} returned HTTP ${response.status} ${response.statusText}`);
+    throw new SyncError(
+      response.status >= 500 ? "unreachable" : "site-changed",
+      `LeetCode ${what} returned HTTP ${response.status} ${response.statusText}`,
+    );
   }
   return response.json();
 }
@@ -48,7 +54,8 @@ export function createLeetcodeTransport(): LeetcodeTransport {
         errors?: { message: string }[];
       };
       if (body.errors?.length) {
-        throw new Error(
+        throw new SyncError(
+          "site-changed",
           `LeetCode ${operation.operationName}: ${body.errors.map((e) => e.message).join("; ")}`,
         );
       }

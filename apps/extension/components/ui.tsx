@@ -1,3 +1,4 @@
+import { describeSyncFailure } from "@lcs/core";
 import type { ReactNode } from "react";
 
 import type { ProviderStatus } from "../lib/messaging.js";
@@ -8,6 +9,7 @@ import { cx } from "./cx";
 export * from "./badge";
 export * from "./button";
 export * from "./callout";
+export * from "./consent-gate";
 export * from "./cx";
 export * from "./field";
 export * from "./grade-button";
@@ -207,11 +209,7 @@ export function ProviderCard({ status }: { status: ProviderStatus }) {
           : `Open ${label.host} signed in to backfill your history. The first sync takes a minute or two.`}
       </p>
 
-      {status.lastError ? (
-        <p className="mt-1.5 rounded-md bg-danger-soft px-2 py-1 text-xs text-danger">
-          {status.lastError}
-        </p>
-      ) : null}
+      {status.lastFailure ? <FailureNote status={status} /> : null}
 
       <ButtonLink
         className="mt-2"
@@ -225,6 +223,19 @@ export function ProviderCard({ status }: { status: ProviderStatus }) {
         {status.lastFullSyncAt ? `Sync in ${label.host}` : `Connect ${label.name}`}
       </ButtonLink>
     </Card>
+  );
+}
+
+/** Renders a classified failure as something the reader can act on. */
+function FailureNote({ status }: { status: ProviderStatus }) {
+  if (!status.lastFailure) return null;
+  const { title, detail } = describeSyncFailure(status.lastFailure, status.provider);
+
+  return (
+    <div className="mt-1.5 rounded-md bg-danger-soft px-2 py-1.5 text-xs text-danger">
+      <p className="font-medium">{title}</p>
+      <p className="mt-0.5">{detail}</p>
+    </div>
   );
 }
 

@@ -5,6 +5,7 @@ import type {
   ProviderId,
   ReviewRating,
   Settings,
+  SyncFailure,
   TrackId,
 } from "@lcs/core";
 
@@ -35,7 +36,11 @@ export interface ProviderStatus {
   username: string | null;
   lastFullSyncAt: number | null;
   lastIncrementalSyncAt: number | null;
-  lastError: string | null;
+  /**
+   * Why the last sync stopped, classified. Not a message: the interface writes its own
+   * copy from this, so a raw failure string can never reach a reader.
+   */
+  lastFailure: SyncFailure | null;
 }
 
 /** One track's headline numbers, so the selector can show both without two round trips. */
@@ -82,7 +87,11 @@ export interface MessageMap {
   };
   "provider:hello": {
     req: { provider: ProviderId; url: string; username?: string | null };
-    res: { ack: true };
+    /**
+     * `consented` rides along on the greeting every content script already sends, so
+     * gating the read costs no extra round trip.
+     */
+    res: { ack: true; consented: boolean };
   };
   /**
    * Ask the background whether this tab should sync, and how far back.
@@ -97,12 +106,12 @@ export interface MessageMap {
       mode: SyncMode | null;
       since: number;
       /** Why a null mode was returned. Silence here is impossible to diagnose from. */
-      reason?: "disabled" | "in-flight" | "too-soon";
+      reason?: "disabled" | "in-flight" | "too-soon" | "not-accepted";
     };
   };
   /** Release the claim and record the outcome. Must follow every successful claim. */
   "sync:completed": {
-    req: { provider: ProviderId; mode: SyncMode; error?: string | null };
+    req: { provider: ProviderId; mode: SyncMode; failure?: SyncFailure | null };
     res: { ok: true };
   };
   "reviews:due": {

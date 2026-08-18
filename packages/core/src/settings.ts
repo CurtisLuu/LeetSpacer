@@ -67,6 +67,22 @@ export interface Settings {
   providers: Record<ProviderId, ProviderSettings>;
   /** One independent schedule per track. */
   tracks: Record<TrackId, TrackSettings>;
+  /**
+   * When the privacy policy was accepted, or null if it hasn't been.
+   *
+   * Gates the *reading*, not the interface. Blocking the panel while the content scripts
+   * carried on collecting would be a consent screen in appearance only — nothing is read
+   * from either site until this is set.
+   */
+  privacyAcceptedAt: number | null;
+  /**
+   * Which revision of the policy was accepted.
+   *
+   * The policy promises that a material change is re-presented before the extension
+   * carries on, and a promise in that document that the code doesn't keep is worse than
+   * no promise. Bumping `PRIVACY_POLICY_VERSION` is what keeps it.
+   */
+  privacyAcceptedVersion: number | null;
   /** Which track the UI is currently showing. Set by the selector in the side panel. */
   activeTrack: TrackId;
   /**
@@ -121,6 +137,20 @@ const LEETCODE_TRACK: TrackSettings = {
  */
 export const SETTINGS_VERSION = 3;
 
+/**
+ * The revision of the privacy policy in `PRIVACY.md`.
+ *
+ * Bump it whenever that document changes materially — what is read, where it goes, or who
+ * can see it. Doing so re-presents the policy and stops all reading until it is accepted
+ * again, which is what the document says will happen.
+ */
+export const PRIVACY_POLICY_VERSION = 1;
+
+/** Has this install accepted the policy as it currently stands? */
+export function hasAcceptedPrivacy(settings: Settings): boolean {
+  return settings.privacyAcceptedVersion === PRIVACY_POLICY_VERSION;
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   settingsVersion: SETTINGS_VERSION,
   providers: {
@@ -128,6 +158,8 @@ export const DEFAULT_SETTINGS: Settings = {
     neetcode: { enabled: true, username: null, lastFullSyncAt: null, lastIncrementalSyncAt: null },
   },
   tracks: { leetcode: LEETCODE_TRACK, neetcode: NEETCODE_TRACK },
+  privacyAcceptedAt: null,
+  privacyAcceptedVersion: null,
   activeTrack: "neetcode",
   problemLinkTarget: "neetcode",
 };
@@ -246,6 +278,9 @@ export function withDefaults(raw: Partial<Settings> | undefined): Settings {
       leetcode: trackWithDefaults(LEETCODE_TRACK, stored?.tracks?.leetcode, legacy),
       neetcode: trackWithDefaults(NEETCODE_TRACK, stored?.tracks?.neetcode, legacy),
     },
+    // Never defaulted to "accepted": consent that the code assumes is not consent.
+    privacyAcceptedAt: stored?.privacyAcceptedAt ?? null,
+    privacyAcceptedVersion: stored?.privacyAcceptedVersion ?? null,
     activeTrack: stored?.activeTrack ?? DEFAULT_SETTINGS.activeTrack,
     problemLinkTarget: stored?.problemLinkTarget ?? DEFAULT_SETTINGS.problemLinkTarget,
   };

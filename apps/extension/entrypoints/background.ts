@@ -3,10 +3,12 @@ import {
   type ReviewCard,
   type Settings,
   type Store,
+  type SyncFailure,
   type TrackId,
   TRACK_IDS,
   createScheduler,
   distributeDueDates,
+  hasAcceptedPrivacy,
   ingestEvents,
   seedMissingCards,
   withMinimumLock,
@@ -33,7 +35,7 @@ const INCREMENTAL_INTERVAL_MS = 15 * 60 * 1000;
 
 /** Which provider tabs have checked in this browser session. */
 const connected = new Set<ProviderId>();
-const lastError = new Map<ProviderId, string>();
+const lastFailure = new Map<ProviderId, SyncFailure>();
 
 /**
  * Providers with a sync in flight, so a second tab doesn't duplicate the work.
@@ -85,14 +87,22 @@ export default defineBackground(() => {
   onMessage({
     "provider:hello": async ({ provider, username }) => {
       connected.add(provider);
-      lastError.delete(provider);
+      lastFailure.delete(provider);
       if (username) await patchProvider(provider, { username });
-      return { ack: true };
+
+      const settings = await (await getStore()).settings.get();
+      return { ack: true, consented: hasAcceptedPrivacy(settings) };
     },
 
     "events:ingest": async ({ provider, events, complete }) => {
       connected.add(provider);
       const store = await getStore();
+
+      // The last line of defence: nothing is written before consent, whatever sent it.
+      if (!hasAcceptedPrivacy(await store.settings.get())) {
+        return { received: events.length, inserted: 0, updatedProblems: [] };
+      }
+
       const result = await ingestEvents(store, events);
 
       if (result.inserted > 0) {
@@ -118,6 +128,11 @@ export default defineBackground(() => {
       const state = settings.providers[provider];
       const now = Date.now();
 
+      // Belt and braces. The content scripts stop before they get here, but a sync path
+      // added later shouldn't have to remember to check.
+      if (!hasAcceptedPrivacy(settings)) {
+        return { mode: null, since: 0, reason: "not-accepted" } as const;
+      }
       if (!state.enabled) return { mode: null, since: 0, reason: "disabled" } as const;
       if (syncing.has(provider)) return { mode: null, since: 0, reason: "in-flight" } as const;
 
@@ -139,14 +154,14 @@ export default defineBackground(() => {
       return since === null ? { mode: "full", since: 0 } : { mode: "incremental", since };
     },
 
-    "sync:completed": async ({ provider, mode, error }) => {
+    "sync:completed": async ({ provider, mode, failure }) => {
       syncing.delete(provider);
       const now = Date.now();
 
-      if (error) {
-        lastError.set(provider, error);
+      if (failure) {
+        lastFailure.set(provider, failure);
       } else {
-        lastError.delete(provider);
+        lastFailure.delete(provider);
         await patchProvider(provider, {
           lastIncrementalSyncAt: now,
           ...(mode === "full" ? { lastFullSyncAt: now } : {}),
@@ -157,12 +172,10 @@ export default defineBackground(() => {
       return { ok: true } as const;
     },
 
-    "sync:run": async ({ provider, mode }) => {
+    "sync:run": async () => {
       // Nothing to trigger from here: both providers read from a tab on their own origin,
-      // and this worker has no `tabs` permission to reach into one. Reported honestly
-      // rather than faking a sync.
-      const where = provider === "neetcode" ? "neetcode.io/practice" : "leetcode.com";
-      lastError.set(provider, `Open ${where} to sync — there is no manual ${mode} sync.`);
+      // and this worker has no `tabs` permission to reach into one. The provider cards say
+      // so; there is nothing to report as a failure.
       return buildStatus();
     },
 
@@ -418,7 +431,7 @@ async function buildStatus(): Promise<SyncStatus> {
     username: settings.providers[id].username,
     lastFullSyncAt: settings.providers[id].lastFullSyncAt,
     lastIncrementalSyncAt: settings.providers[id].lastIncrementalSyncAt,
-    lastError: lastError.get(id) ?? null,
+    lastFailure: lastFailure.get(id) ?? null,
   }));
 
   // Reported for every track, not just the active one, so the selector can show what's

@@ -44,8 +44,8 @@ export function App() {
       </header>
 
       {error ? (
-        <Callout tone="danger" title="Can't reach the background worker">
-          {error}
+        <Callout tone="danger" title="LeetSpacer isn't responding">
+          Close and reopen this panel. If it keeps happening, restart your browser.
         </Callout>
       ) : null}
 
@@ -75,17 +75,12 @@ export function App() {
             <Stat label="Solved" value={stats?.solved ?? "—"} tone="good" className="w-full" />
           </Tooltip>
           <Tooltip
-            // Spells out the relationship rather than describing the field, because the
-            // number is always higher than Solved and that looks wrong until you know a
-            // problem contributes one event per attempt.
-            label={
-              track === "leetcode"
-                ? `${stats?.events ?? 0} submissions across ${stats?.solved ?? 0} solved problems — every attempt counts, including the ones that failed.`
-                : `${stats?.events ?? 0} completions, one per problem NeetCode reports done. It has nothing finer to report.`
-            }
+            // Always higher than Solved, which looks wrong until you know a problem you
+            // struggled with counts more than once.
+            label={`Every attempt you've made, including the ones that didn't pass`}
             align="end"
           >
-            <Stat label="Events" value={stats?.events ?? "—"} tone="info" className="w-full" />
+            <Stat label="Attempts" value={stats?.events ?? "—"} tone="info" className="w-full" />
           </Tooltip>
         </div>
       </Section>
@@ -102,8 +97,8 @@ export function App() {
         <p>
           Catalog:{" "}
           {status?.catalog?.generatedAt
-            ? `${status.catalog.count} problems, built ${new Date(status.catalog.generatedAt).toLocaleDateString()}`
-            : "not built yet — run pnpm catalog:build"}
+            ? `${status.catalog.count} problems, updated ${new Date(status.catalog.generatedAt).toLocaleDateString()}`
+            : "unavailable"}
         </p>
         <Button variant="link" size="sm" onClick={() => void browser.runtime.openOptionsPage()}>
           Settings

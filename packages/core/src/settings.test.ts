@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_SETTINGS, SETTINGS_VERSION, type Settings, withDefaults } from "./settings.js";
+import {
+  DEFAULT_SETTINGS,
+  PRIVACY_POLICY_VERSION,
+  SETTINGS_VERSION,
+  type Settings,
+  hasAcceptedPrivacy,
+  withDefaults,
+} from "./settings.js";
 
 describe("withDefaults", () => {
   it("fills in everything from nothing", () => {
@@ -255,6 +262,61 @@ describe("the shared NeetCode sync cursor", () => {
     };
 
     expect(withDefaults(synced).providers.neetcode.lastFullSyncAt).toBe(1_787_000_000_000);
+  });
+});
+
+describe("privacy consent", () => {
+  it("starts unaccepted", () => {
+    expect(hasAcceptedPrivacy(withDefaults(undefined))).toBe(false);
+    expect(withDefaults(undefined).privacyAcceptedAt).toBeNull();
+  });
+
+  it("re-asks when the policy revision moves", () => {
+    // The policy itself promises this. A promise in that document the code doesn't keep
+    // is worse than no promise.
+    const stale = {
+      privacyAcceptedAt: 1_786_929_717_000,
+      privacyAcceptedVersion: PRIVACY_POLICY_VERSION - 1,
+    } as Partial<Settings>;
+
+    expect(hasAcceptedPrivacy(withDefaults(stale))).toBe(false);
+  });
+
+  it("accepts the current revision", () => {
+    const current = {
+      privacyAcceptedAt: 1_786_929_717_000,
+      privacyAcceptedVersion: PRIVACY_POLICY_VERSION,
+    } as Partial<Settings>;
+
+    expect(hasAcceptedPrivacy(withDefaults(current))).toBe(true);
+  });
+
+  it("treats a timestamp with no revision as unaccepted", () => {
+    // Written by a build that predates versioning, so what was agreed to is unknown.
+    const ambiguous = { privacyAcceptedAt: 1_786_929_717_000 } as Partial<Settings>;
+    expect(hasAcceptedPrivacy(withDefaults(ambiguous))).toBe(false);
+  });
+
+  it("is never inferred for an existing install", () => {
+    // Consent the code assumes on someone's behalf is not consent. An install that
+    // predates the gate has to pass through it like any other.
+    const existing = {
+      settingsVersion: SETTINGS_VERSION,
+      providers: DEFAULT_SETTINGS.providers,
+      activeTrack: "leetcode",
+    } as unknown as Partial<Settings>;
+
+    expect(withDefaults(existing).privacyAcceptedAt).toBeNull();
+  });
+
+  it("keeps an acceptance once given", () => {
+    const accepted = { privacyAcceptedAt: 1_786_929_717_000 } as Partial<Settings>;
+    expect(withDefaults(accepted).privacyAcceptedAt).toBe(1_786_929_717_000);
+  });
+
+  it("survives a round trip", () => {
+    const once = withDefaults({ privacyAcceptedAt: 123 } as Partial<Settings>);
+    expect(withDefaults(once).privacyAcceptedAt).toBe(123);
   });
 });
 

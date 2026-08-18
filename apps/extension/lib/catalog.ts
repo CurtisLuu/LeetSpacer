@@ -40,6 +40,7 @@ export function getCatalog(): Promise<Catalog> {
       return createCatalog((await readAsset(CATALOG_URL)) as CatalogData, ROADMAP_TOPICS);
     } catch (error) {
       // Re-throwing loses the actionable half of the message.
+      // Developer detail; the interface never shows this string.
       throw new Error(`${(error as Error).message}. Run pnpm catalog:build.`);
     }
   })();

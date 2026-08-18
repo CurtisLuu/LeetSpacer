@@ -2,6 +2,7 @@ import type { ProgressEvent } from "@lcs/core";
 import {
   type SyncCtx,
   checkToEvent,
+  classifySyncError,
   createThrottle,
   isSubmissionCheckUrl,
   leetcodeSync,
@@ -41,16 +42,22 @@ export default defineContentScript({
   async main(ctx) {
     const transport = createLeetcodeTransport();
 
-    // The verdict relay is set up first and unconditionally: it costs nothing, and a
-    // submission landing while a slow sync is still running shouldn't be missed.
-    watchForVerdicts();
-
     const auth = await leetcodeSync.detectAuth(transport);
-    await send("provider:hello", {
+    const hello = await send("provider:hello", {
       provider: "leetcode",
       url: location.href,
       username: auth.signedIn ? auth.username : null,
-    }).catch(() => {});
+    }).catch(() => null);
+
+    // Nothing is read before the privacy policy is accepted, including the verdict relay.
+    if (!hello?.consented) {
+      console.info("[lcs] leetcode: waiting for the privacy policy to be accepted");
+      return;
+    }
+
+    // The verdict relay is set up before the sync: it costs nothing, and a submission
+    // landing while a slow sync is still running shouldn't be missed.
+    watchForVerdicts();
 
     if (!auth.signedIn) return;
 
@@ -106,10 +113,13 @@ async function syncIfClaimed(
       `[lcs] leetcode ${mode} sync done: ${inserted} new events across ${touched.size} problems`,
     );
   } catch (cause) {
-    const error = cause instanceof Error ? cause.message : String(cause);
     // Reported rather than swallowed — a sync that silently stops looks identical to an
     // account with nothing new, and the side panel would show a stale "last synced".
-    await send("sync:completed", { provider: "leetcode", mode, error }).catch(() => {});
+    await send("sync:completed", {
+      provider: "leetcode",
+      mode,
+      failure: classifySyncError(cause),
+    }).catch(() => {});
     console.warn(`[lcs] leetcode ${mode} sync failed`, cause);
   }
 }
