@@ -47,7 +47,8 @@ export function App() {
       setItems(result.items);
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      console.warn("[lcs] loading the problem list failed", cause);
+      setError("load");
     }
   }, []);
 
@@ -129,8 +130,8 @@ export function App() {
       </div>
 
       {error ? (
-        <Callout tone="danger" title="Couldn't load the list">
-          {error}
+        <Callout tone="danger" title="Couldn't load your problems">
+          Reload this page to try again.
         </Callout>
       ) : items === null ? (
         <p className="text-xs text-ink-muted">Loading…</p>

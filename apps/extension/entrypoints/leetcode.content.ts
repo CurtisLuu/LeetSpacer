@@ -2,6 +2,7 @@ import type { ProgressEvent } from "@lcs/core";
 import {
   type SyncCtx,
   checkToEvent,
+  classifySyncError,
   createThrottle,
   isSubmissionCheckUrl,
   leetcodeSync,
@@ -106,10 +107,13 @@ async function syncIfClaimed(
       `[lcs] leetcode ${mode} sync done: ${inserted} new events across ${touched.size} problems`,
     );
   } catch (cause) {
-    const error = cause instanceof Error ? cause.message : String(cause);
     // Reported rather than swallowed — a sync that silently stops looks identical to an
     // account with nothing new, and the side panel would show a stale "last synced".
-    await send("sync:completed", { provider: "leetcode", mode, error }).catch(() => {});
+    await send("sync:completed", {
+      provider: "leetcode",
+      mode,
+      failure: classifySyncError(cause),
+    }).catch(() => {});
     console.warn(`[lcs] leetcode ${mode} sync failed`, cause);
   }
 }

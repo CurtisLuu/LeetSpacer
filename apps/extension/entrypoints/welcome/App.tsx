@@ -5,7 +5,6 @@ import {
   Badge,
   Button,
   ButtonLink,
-  Callout,
   Card,
   CheckIcon,
   ExternalIcon,
@@ -41,14 +40,14 @@ const SOURCES: {
     name: "LeetCode",
     href: "https://leetcode.com/problemset/",
     blurb:
-      "Your submission history, with real solve dates and attempt counts. The first sync walks the whole thing and takes a few minutes.",
+      "Everything you've solved, scheduled from when you actually solved it. The first sync takes a few minutes.",
   },
   {
     id: "neetcode",
     name: "NeetCode",
     href: "https://neetcode.io/practice",
     blurb:
-      "Your completed problems, plus your submission history — one request per day you were active, so the first sync takes a minute or two.",
+      "Everything you've completed, with real dates for the problems you solved here. The first sync takes a minute or two.",
   },
 ];
 
@@ -117,8 +116,7 @@ export function App() {
 
           <p className="mt-3 text-xs text-ink-subtle">
             Leave this tab open — it updates as your history arrives. You only need one of
-            the two, and each keeps its own schedule. There is no sync button anywhere:
-            opening the site is the sync.
+            the two, and each keeps its own schedule.
           </p>
         </Step>
 
@@ -134,32 +132,15 @@ export function App() {
             <TrackBlurb
               track="leetcode"
               active={track === "leetcode"}
-              body="A timestamp on every submission, so reviews are scheduled from your real history."
+              body="Your whole history, usually the larger of the two."
             />
             <TrackBlurb
               track="neetcode"
               active={track === "neetcode"}
-              body="Real dates for anything you solved in its editor. Problems ticked off or solved elsewhere have none, and get spread instead."
+              body="The NeetCode curriculum, paced separately from the above."
             />
           </dl>
 
-          <Callout className="mt-3" title="Where the dates come from">
-            <p>
-              Both sites are read for submission history — timestamps, verdicts and attempt
-              counts — and a problem scheduled from when you actually solved it beats one
-              scheduled from when the extension first heard about it.
-            </p>
-            <p className="mt-1">
-              <strong className="font-medium">NeetCode</strong> only records that history for
-              problems you solved in its own editor. Anything you ticked off by hand, or
-              solved on LeetCode and marked complete, has no date attached — those get spread
-              across a window instead, which you can change in settings.
-            </p>
-            <p className="mt-1">
-              The two are kept apart: what LeetCode knows about a problem and what NeetCode
-              knows are separate records, never merged.
-            </p>
-          </Callout>
         </Step>
 
         <Step

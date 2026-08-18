@@ -54,7 +54,7 @@ export function App() {
       await send("data:reset", {});
       setConfirmingReset(false);
       setFailed(false);
-      setMessage("Everything cleared. Open neetcode.io/practice to sync again.");
+      setMessage("Everything cleared. Open either site to sync again.");
     } catch (error) {
       setFailed(true);
       setMessage(`Reset failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -107,8 +107,8 @@ export function App() {
       const due = (await store.cards.due(active, Date.now())).length;
       setFailed(false);
       setMessage(
-        `Imported ${snapshot.problems.length} problems and ${snapshot.events.length} submissions. ` +
-          `${cards} review cards, ${due} due now in the ${TRACK_LABELS[active]} track.`,
+        `Imported ${snapshot.problems.length} problems. ` +
+          `${cards} in review, ${due} due now in the ${TRACK_LABELS[active]} track.`,
       );
     } catch (error) {
       setFailed(true);
@@ -146,7 +146,7 @@ export function App() {
 
       <Section
         title="Your history"
-        description="Both sites are supported. LeetCode reports when you solved each problem; NeetCode reports only that you did — so LeetCode reviews are dated and NeetCode's are spread."
+        description="Open either site signed in and your progress syncs on its own. Each keeps its own schedule."
       >
         <div className="space-y-3 rounded-lg border border-border bg-surface-raised p-3">
           <div className="space-y-1">
@@ -157,11 +157,9 @@ export function App() {
               onToggle={(enabled) => void patchProvider("leetcode", enabled)}
             />
             <p className="text-xs text-ink-muted">
-              Open any page while signed in and your submission history syncs — with real
-              solve dates and attempt counts, so reviews are scheduled from when you
-              actually solved something. Submitting with a tab open also records the
-              verdict as it lands. The first sync walks your whole history and can take a
-              few minutes; after that it's a single request.
+              Everything you've solved, scheduled from when you actually solved it. The
+              first sync takes a few minutes; after that it keeps up as you go. Solving
+              with a tab open records the result straight away.
             </p>
           </div>
 
@@ -173,25 +171,16 @@ export function App() {
               onToggle={(enabled) => void patchProvider("neetcode", enabled)}
             />
             <p className="text-xs text-ink-muted">
-              Your completed problems sync as you browse. NeetCode records that a problem
-              is done but never when, so those seed from the schedule below.
+              Everything you've completed, with real dates for the problems you solved
+              here. Anything you ticked off elsewhere is scheduled using the settings
+              below.
             </p>
           </div>
 
           <p className="border-t border-border pt-3 text-xs text-ink-subtle">
-            Both identify problems by their LeetCode link, so the two merge into one
-            history and titles, difficulty and topic tags come from the bundled catalogue.
+            Turning a source off stops it syncing. Nothing already collected is removed.
           </p>
 
-          <Callout title="Why the two schedule differently">
-            <p>
-              <strong className="font-medium">LeetCode</strong> exposes a timestamp on every submission, so those cards are backfilled with your real solve dates — a problem you last passed in March is scheduled as a problem last seen in March.
-            </p>
-            <p className="mt-1">
-              <strong className="font-medium">NeetCode</strong> reports that a problem is complete but never when, so there is no history to backfill from. LeetSpacer generates its own schedule for those, spread from the day you sync. Change how that spread
-              works under Practice tracks below.
-            </p>
-          </Callout>
         </div>
       </Section>
 
@@ -299,7 +288,7 @@ export function App() {
           <div className="space-y-3 border-t border-border pt-3">
             <p className="flex items-center gap-1.5 text-xs font-medium text-ink">
               Scheduling a backlog
-              <InfoDot label="Applies only to problems with no real solve date. A LeetCode problem read from your submission history keeps the due date derived from when you actually solved it." />
+              <InfoDot label="Only affects problems with no recorded solve date. Anything with a real date keeps it." />
             </p>
 
             <fieldset className="space-y-2">
@@ -419,14 +408,10 @@ export function App() {
         <div className="space-y-2 rounded-xl border border-border bg-surface-raised p-3">
           <p className="text-xs text-ink-muted">
             Deletes every tracked problem, review card and grade from this browser. Your
-            settings above are kept. Afterwards, open neetcode.io/practice and your
-            completed problems sync again from scratch.
+            settings above are kept. Open either site afterwards and your progress syncs
+            again from scratch.
           </p>
-          <p className="text-xs text-ink-subtle">
-            Worth doing if your problem count looks wrong — an earlier import can leave
-            behind entries keyed by NeetCode's own slugs, which show up alongside the
-            LeetCode-keyed ones as duplicates.
-          </p>
+
 
           {confirmingReset ? (
             <div className="flex flex-wrap items-center gap-2">

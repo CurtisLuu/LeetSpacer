@@ -1,5 +1,6 @@
 export * from "./model.js";
 export * from "./events.js";
+export * from "./errors.js";
 export * from "./clock.js";
 export * from "./settings.js";
 export * from "./store.js";

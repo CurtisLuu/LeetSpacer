@@ -85,7 +85,8 @@ export function ReviewQueue({ track }: { track: TrackId }) {
         }
         return result;
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        console.warn("[lcs] grade failed", cause);
+        setError("grade");
         return null;
       }
     },
@@ -138,7 +139,8 @@ export function ReviewQueue({ track }: { track: TrackId }) {
         await load(false, requested.current ?? undefined);
         return nextDue;
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        console.warn("[lcs] grade failed", cause);
+        setError("grade");
         return null;
       } finally {
         setGrading(null);
@@ -199,8 +201,8 @@ export function ReviewQueue({ track }: { track: TrackId }) {
   if (error) {
     return (
       <Section title="Today">
-        <Callout tone="danger" title="Couldn't load the queue">
-          {error}
+        <Callout tone="danger" title="Couldn't load today's problems">
+          Close and reopen this panel to try again.
         </Callout>
       </Section>
     );

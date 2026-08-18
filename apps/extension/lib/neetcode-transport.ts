@@ -1,4 +1,4 @@
-import type { NeetcodeTransport } from "@lcs/providers";
+import { type NeetcodeTransport, SyncError } from "@lcs/providers";
 
 /**
  * Same-origin access to neetcode.io's callable endpoint.
@@ -23,7 +23,9 @@ export function createNeetcodeTransport(getToken: TokenSource): NeetcodeTranspor
   return {
     async callable(functionId, extra = {}) {
       const authorization = getToken();
-      if (!authorization) throw new Error("No NeetCode session observed yet.");
+      if (!authorization) {
+        throw new SyncError("signed-out", "No NeetCode session observed on this page.");
+      }
 
       const response = await fetch(ENDPOINT, {
         method: "POST",
@@ -33,14 +35,17 @@ export function createNeetcodeTransport(getToken: TokenSource): NeetcodeTranspor
       });
 
       if (response.status === 401 || response.status === 403) {
-        // The token aged out mid-walk. Worth naming, because the alternative reading is
-        // "NeetCode broke", and the fix is simply to reload the page.
-        throw new Error(
-          `NeetCode ${functionId} was rejected (HTTP ${response.status}) — the session token expired. Reload neetcode.io.`,
+        // Aged out mid-walk. A dead session, not a broken site.
+        throw new SyncError(
+          "session-expired",
+          `NeetCode ${functionId} rejected the session (HTTP ${response.status})`,
         );
       }
       if (!response.ok) {
-        throw new Error(`NeetCode ${functionId} returned HTTP ${response.status}`);
+        throw new SyncError(
+          response.status >= 500 ? "unreachable" : "site-changed",
+          `NeetCode ${functionId} returned HTTP ${response.status}`,
+        );
       }
 
       // Firebase callables answer as `{result}`; this endpoint has been observed using

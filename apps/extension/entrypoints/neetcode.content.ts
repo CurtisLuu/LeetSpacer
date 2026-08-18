@@ -4,6 +4,7 @@ import {
   completedToEvents,
   createThrottle,
   isCompletedProblemsCall,
+  classifySyncError,
   neetcodeSync,
   parseCompletedProblems,
 } from "@lcs/providers";
@@ -102,14 +103,16 @@ async function syncActivity(signal: AbortSignal): Promise<void> {
   console.info(`[lcs] neetcode: ${mode} activity sync starting, waiting for the page…`);
 
   if (!(await waitForSession(signal))) {
-    // The two failures look identical from the outside and have nothing in common, so
-    // the count goes in the message rather than leaving it to be guessed at.
-    const error =
+    await send("sync:completed", { provider: "neetcode", mode, failure: "signed-out" }).catch(
+      () => {},
+    );
+    // The two causes look identical from outside and have nothing in common, so the count
+    // goes to the console where whoever is debugging can use it.
+    console.warn(
       observedCalls === 0
-        ? "Saw no NeetCode API calls — only completed problems could be read."
-        : `Saw ${observedCalls} NeetCode API calls but no auth header — only completed problems could be read.`;
-    await send("sync:completed", { provider: "neetcode", mode, error }).catch(() => {});
-    console.warn(`[lcs] ${error}`);
+        ? "[lcs] neetcode: no relayed calls seen — the page bridge may be down"
+        : `[lcs] neetcode: ${observedCalls} calls seen, none carrying an auth header`,
+    );
     return;
   }
 
@@ -121,9 +124,10 @@ async function syncActivity(signal: AbortSignal): Promise<void> {
   const slugs = new Map(Object.entries(byNeetcodeSlug));
 
   if (slugs.size === 0) {
-    const error = "No NeetCode slug map — run pnpm neetcode:map and rebuild.";
-    await send("sync:completed", { provider: "neetcode", mode, error }).catch(() => {});
-    console.warn(`[lcs] ${error}`);
+    await send("sync:completed", { provider: "neetcode", mode, failure: "not-ready" }).catch(
+      () => {},
+    );
+    console.warn("[lcs] neetcode: slug map empty — run pnpm neetcode:map and rebuild");
     return;
   }
 
@@ -158,9 +162,12 @@ async function syncActivity(signal: AbortSignal): Promise<void> {
       `[lcs] neetcode ${mode} sync done: ${inserted} new events across ${touched.size} problems`,
     );
   } catch (cause) {
-    const error = cause instanceof Error ? cause.message : String(cause);
     // Not fatal: the completed set still keeps the track populated, just without dates.
-    await send("sync:completed", { provider: "neetcode", mode, error }).catch(() => {});
+    await send("sync:completed", {
+      provider: "neetcode",
+      mode,
+      failure: classifySyncError(cause),
+    }).catch(() => {});
     console.warn(`[lcs] neetcode ${mode} activity sync failed`, cause);
   }
 }

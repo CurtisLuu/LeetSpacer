@@ -5,6 +5,7 @@ import type {
   ProviderId,
   ReviewRating,
   Settings,
+  SyncFailure,
   TrackId,
 } from "@lcs/core";
 
@@ -35,7 +36,11 @@ export interface ProviderStatus {
   username: string | null;
   lastFullSyncAt: number | null;
   lastIncrementalSyncAt: number | null;
-  lastError: string | null;
+  /**
+   * Why the last sync stopped, classified. Not a message: the interface writes its own
+   * copy from this, so a raw failure string can never reach a reader.
+   */
+  lastFailure: SyncFailure | null;
 }
 
 /** One track's headline numbers, so the selector can show both without two round trips. */
@@ -102,7 +107,7 @@ export interface MessageMap {
   };
   /** Release the claim and record the outcome. Must follow every successful claim. */
   "sync:completed": {
-    req: { provider: ProviderId; mode: SyncMode; error?: string | null };
+    req: { provider: ProviderId; mode: SyncMode; failure?: SyncFailure | null };
     res: { ok: true };
   };
   "reviews:due": {

@@ -1,4 +1,4 @@
-import type { ProgressEvent, ProviderId, Timestamp } from "@lcs/core";
+import type { ProgressEvent, ProviderId, SyncFailure, Timestamp } from "@lcs/core";
 
 /**
  * The site-adapter seam.
@@ -55,6 +55,29 @@ export interface SyncProgress {
   phase: string;
   fetched: number;
   total: number | null;
+}
+
+/**
+ * A failure already classified for the interface.
+ *
+ * Adapters know what went wrong far better than the code catching them does — an HTTP 401
+ * is a dead session here and a missing problem there — so they say which of the handful of
+ * user-facing conditions applies rather than leaving a string to be pattern-matched later.
+ * The message stays technical and goes to the console.
+ */
+export class SyncError extends Error {
+  constructor(
+    readonly failure: SyncFailure,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SyncError";
+  }
+}
+
+/** The classification of an unknown throw, defaulting to the vaguest answer. */
+export function classifySyncError(error: unknown): SyncFailure {
+  return error instanceof SyncError ? error.failure : "unknown";
 }
 
 /** Raised when a site's shape has changed and the adapter can't safely continue. */
