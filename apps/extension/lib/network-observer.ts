@@ -1,31 +1,53 @@
 import type { ProviderId } from "@lcs/core";
 
-import { BRIDGE_MESSAGE, MAX_BODY_CHARS, type PageObservation } from "./page-bridge.js";
+import { MAX_BODY_CHARS, type PageObservation } from "./page-bridge.js";
+
+/** Publishes one observation to the ISOLATED world, over the private port. */
+export type PublishObservation = (observation: PageObservation) => void;
+
+/** Which requests may be looked at. An allow-list, never a "looks interesting" match. */
+export type UrlFilter = (url: string) => boolean;
 
 /**
  * Watches the requests the page itself makes, from the MAIN world.
  *
- * This is how we learn about an accepted submission the moment it happens, and how
- * capture mode records the real shape of LeetCode's API — without polling and without
+ * This is how we learn about an accepted submission the moment it happens, and how the
+ * NeetCode adapter borrows the token the page just used — without polling and without
  * issuing a single request of our own. It is strictly passive: every wrapper returns the
  * original value untouched, and any failure inside our observation code is swallowed so
  * it can never break the host page.
+ *
+ * Two things bound what it can see, and both are the caller's responsibility:
+ *
+ *   - `urlFilter` decides what is looked at *at all*. A request that does not match is
+ *     never read, never cloned, and never published. Keep it to the exact endpoints the
+ *     adapter consumes — a filter that merely looks specific will one day match a sign-in.
+ *   - Nothing is patched until this is called, and the callers only call it once the
+ *     privacy policy has been accepted and the source is switched on.
  */
-export function installNetworkObserver(provider: ProviderId, urlFilter: RegExp): void {
-  const publish = (observation: Omit<PageObservation, "type">) => {
+export function installNetworkObserver(
+  provider: ProviderId,
+  urlFilter: UrlFilter,
+  publish: PublishObservation,
+): void {
+  const emit = (observation: PageObservation) => {
     try {
-      // Same-origin only. Broadcasting with "*" would have put a bearer token on a bus
-      // any embedded frame could read.
-      window.postMessage(
-        { type: BRIDGE_MESSAGE, ...observation } satisfies PageObservation,
-        location.origin,
-      );
+      publish(observation);
     } catch {
       // Never let observation break the page.
     }
   };
 
   const truncate = (body: string) => body.slice(0, MAX_BODY_CHARS);
+
+  const matches = (url: string) => {
+    try {
+      return urlFilter(url);
+    } catch {
+      // A filter that throws observes nothing. Failing closed is the only safe direction.
+      return false;
+    }
+  };
 
   // --- fetch ---------------------------------------------------------------
   const originalFetch = window.fetch;
@@ -40,7 +62,7 @@ export function installNetworkObserver(provider: ProviderId, urlFilter: RegExp):
       else if (request instanceof URL) url = request.href;
       else url = request.url;
 
-      if (urlFilter.test(url)) {
+      if (matches(url)) {
         const init = args[1];
         if (typeof init?.body === "string") {
           requestBody = truncate(init.body);
@@ -63,13 +85,13 @@ export function installNetworkObserver(provider: ProviderId, urlFilter: RegExp):
     const response = await originalFetch.apply(this, args);
 
     try {
-      if (url && urlFilter.test(url)) {
+      if (url && matches(url)) {
         // Clone before reading: the page must still get an unconsumed body.
         void response
           .clone()
           .text()
           .then((body) =>
-            publish({
+            emit({
               provider,
               url,
               method: (args[1]?.method ?? "GET").toUpperCase(),
@@ -104,13 +126,19 @@ export function installNetworkObserver(provider: ProviderId, urlFilter: RegExp):
   // Headers have to be caught as they're set — an XHR exposes no way to read them back.
   // Angular's HttpClient uses XHR rather than fetch, so without this the bearer token on
   // NeetCode's own calls goes past unseen and the history walk has nothing to borrow.
+  //
+  // Only ever recorded for a URL the filter already allows: a header from any other
+  // request is not ours to hold, even in a local variable.
   OriginalXHR.prototype.setRequestHeader = function patchedSetHeader(
     this: TrackedXHR,
     name: string,
     value: string,
   ) {
     try {
-      if (name.toLowerCase() === "authorization") this.__lcsAuth = String(value);
+      const url = this.__lcsUrl;
+      if (url && matches(url) && name.toLowerCase() === "authorization") {
+        this.__lcsAuth = String(value);
+      }
     } catch {
       // ignore
     }
@@ -135,7 +163,7 @@ export function installNetworkObserver(provider: ProviderId, urlFilter: RegExp):
   OriginalXHR.prototype.send = function patchedSend(this: TrackedXHR, ...args: unknown[]) {
     try {
       const url = this.__lcsUrl;
-      if (url && urlFilter.test(url)) {
+      if (url && matches(url)) {
         const requestBody = typeof args[0] === "string" ? truncate(args[0]) : "";
         this.addEventListener("load", () => {
           try {
@@ -143,7 +171,7 @@ export function installNetworkObserver(provider: ProviderId, urlFilter: RegExp):
               this.responseType === "" || this.responseType === "text"
                 ? truncate(this.responseText)
                 : "";
-            publish({
+            emit({
               provider,
               url,
               method: this.__lcsMethod ?? "GET",

@@ -35,10 +35,10 @@ describe("parseSnapshot", () => {
     expect(() => parseSnapshot("42")).toThrow(/isn't an object/);
   });
 
-  it("recognises a capture export and says so", () => {
+  it("recognises a debug capture and says so", () => {
     const captures = JSON.stringify({ capturedAt: 1, records: [{ id: "x" }] });
 
-    expect(() => parseSnapshot(captures)).toThrow(/capture-mode export/);
+    expect(() => parseSnapshot(captures)).toThrow(/debug capture/);
   });
 
   it("reports an unexpected version rather than importing it", () => {
@@ -112,8 +112,36 @@ describe("migrating a version 1 backup", () => {
   });
 
   it("re-keys logs so two tracks can't collide on one id", () => {
-    expect(migrated.logs).toEqual([
-      { id: "leetcode:two-sum:99", track: "leetcode", slug: "two-sum", rating: 3, reviewedAt: 99 },
-    ]);
+    expect(migrated.logs).toHaveLength(1);
+    expect(migrated.logs[0]).toMatchObject({
+      id: "leetcode:two-sum:99",
+      track: "leetcode",
+      slug: "two-sum",
+      rating: 3,
+      reviewedAt: 99,
+    });
+  });
+
+  it("fills in scheduling fields the old format didn't carry", () => {
+    // A backup made before these fields existed still has to import. The migration adds
+    // them; it never overwrites one the file did carry.
+    const twoSum = migrated.cards.find((card) => card.slug === "two-sum");
+
+    expect(twoSum).toMatchObject({ due: 10, reps: 3, phase: "review", lapses: 0, lastReview: null });
+    expect(Number.isFinite(twoSum?.stability)).toBe(true);
+    // Never reviewed, so it is a new card rather than one in the review phase.
+    expect(migrated.cards.find((card) => card.slug === "orphan")?.phase).toBe("new");
+    expect(migrated.logs[0]).toMatchObject({ source: "manual", phase: "review" });
+  });
+
+  it("refuses a card whose due date the file never had", () => {
+    // The one field a migration must not invent: a made-up due date is a made-up
+    // schedule, and it would look exactly like a real one.
+    const broken = JSON.stringify({
+      ...legacy,
+      cards: [{ slug: "two-sum", reps: 1 }],
+    });
+
+    expect(() => parseSnapshot(broken)).toThrow(/due must be a finite timestamp/);
   });
 });

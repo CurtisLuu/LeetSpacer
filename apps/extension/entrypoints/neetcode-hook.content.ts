@@ -1,19 +1,30 @@
+import { isObservableNeetcodeUrl } from "@lcs/providers";
+
 import { installNetworkObserver } from "../lib/network-observer.js";
+import { acceptPageBridge } from "../lib/page-bridge.js";
 
 /**
  * MAIN world on neetcode.io.
  *
- * Signed-in progress is expected to come from Firestore, so the filter covers the Google
- * APIs hosts alongside anything that looks like NeetCode's own backend. Broad on purpose
- * — P4 narrows it once the capture shows what actually carries progress.
+ * Watches exactly one endpoint: `POST /api/callableFunctionHttp`, which carries both the
+ * completed-problem set the page fetches on load and the bearer token the activity walk
+ * borrows. `isObservableNeetcodeUrl` is an allow-list of that path on neetcode.io's own
+ * host — see `@lcs/providers` for what the earlier substring filter matched by accident.
+ *
+ * Nothing is patched here on load. The observer is installed only once the ISOLATED world
+ * says the privacy policy has been accepted and this source is switched on, so a page
+ * visited before consent has its requests left entirely alone.
+ *
+ * `document_start` is load-bearing, not a performance choice: it is what puts the port
+ * handshake before the page's first script. See `lib/page-bridge.ts`.
  */
-const OBSERVED_URLS = /firestore|googleapis|firebaseio|\/api\/|graphql/i;
-
 export default defineContentScript({
   matches: ["https://neetcode.io/*"],
   world: "MAIN",
   runAt: "document_start",
   main() {
-    installNetworkObserver("neetcode", OBSERVED_URLS);
+    acceptPageBridge((publish) => {
+      installNetworkObserver("neetcode", (url) => isObservableNeetcodeUrl(url, location.origin), publish);
+    });
   },
 });

@@ -44,7 +44,15 @@ export function getCatalog(): Promise<Catalog> {
       throw new Error(`${(error as Error).message}. Run pnpm catalog:build.`);
     }
   })();
-  return pending;
+
+  // A rejected promise must not stay in the cache. One failed fetch — a worker starting
+  // while the profile was busy, a transient read — would otherwise poison this context
+  // for as long as it lives: every later call gets the same rejection, so titles and
+  // difficulties never come back until the panel is closed and reopened.
+  return pending.catch((error: unknown) => {
+    pending = undefined;
+    throw error;
+  });
 }
 
 /**
@@ -54,6 +62,8 @@ export function getCatalog(): Promise<Catalog> {
  * worse link but not a broken feature, and failing here would take the queue down with it.
  */
 export function getProblemLinks(): Promise<ProblemLinks> {
+  // No retry needed on this one: it resolves to an empty map rather than rejecting, so
+  // there is never a rejection to cache.
   pendingLinks ??= (async () => {
     try {
       return createProblemLinks((await readAsset(NEETCODE_SLUGS_URL)) as NeetcodeSlugData);

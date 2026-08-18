@@ -233,3 +233,40 @@ describe("seedMissingCards", () => {
     expect(new Set((await store.cards.all("neetcode")).map((c) => c.due)).size).toBeGreaterThan(1);
   });
 });
+
+describe("seeding one track", () => {
+  it("leaves the other track's cards alone", async () => {
+    // What an ingest passes: a batch of LeetCode submissions cannot have created a
+    // NeetCode card, and walking that track on every page of a history sync is work that
+    // can only ever come back empty.
+    const store = createMemoryStore();
+    await ingestEvents(store, [
+      {
+        id: "leetcode:submission_result:two-sum:1",
+        type: "submission_result",
+        provider: "leetcode",
+        slug: "two-sum",
+        verdict: "accepted",
+        submittedAt: NOW,
+        observedAt: NOW,
+      },
+      {
+        id: "neetcode:problem_solved:valid-anagram:0:completed",
+        type: "problem_solved",
+        provider: "neetcode",
+        slug: "valid-anagram",
+        solvedAt: NOW,
+        observedAt: NOW,
+      },
+    ]);
+
+    const result = await seedMissingCards(store, NOW, "leetcode");
+
+    expect(result.seeded).toEqual({ leetcode: 1, neetcode: 0 });
+    expect(await store.cards.count("leetcode")).toBe(1);
+    expect(await store.cards.count("neetcode")).toBe(0);
+
+    // And the other track still seeds when it is asked to.
+    expect((await seedMissingCards(store, NOW, "neetcode")).seeded.neetcode).toBe(1);
+  });
+});

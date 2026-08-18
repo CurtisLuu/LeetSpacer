@@ -24,6 +24,9 @@ v1→v2 database migration intact — it should have been moved, not rebuilt.
 The remaining blocker is screenshots, below. Those need a real install with real data, so
 only you can take them.
 
+Re-run `pnpm zip` after any code change — the artifact in `.output/` is whatever was built
+last, and uploading a stale one is the easiest mistake here to make.
+
 ---
 
 ## Listing fields
@@ -86,8 +89,17 @@ PRIVACY
 
 Everything stays on your device. There is no server, no account, and no analytics.
 LeetSpacer reads your history from a script running on leetcode.com and neetcode.io using
-the session you're already signed in with — it never handles a password or a token, and
-nothing is ever transmitted anywhere.
+the session you're already signed in with, and nothing is ever transmitted anywhere. It
+never handles a password. Reading your NeetCode history needs the short-lived token
+neetcode.io itself uses, which is borrowed from a request the page has already made, kept
+in memory for that tab only, and never stored — LeetCode needs nothing at all, because
+your browser attaches its cookie by itself.
+
+Nothing is read until you accept the privacy policy, which the extension shows you the
+first time it runs.
+
+LeetSpacer is an independent project. It is not affiliated with, endorsed by, or connected
+to LeetCode or NeetCode.
 
 Full policy: https://github.com/CurtisLuu/LeetSpacer/blob/main/PRIVACY.md
 Source code: https://github.com/CurtisLuu/LeetSpacer
@@ -129,12 +141,14 @@ solved, using their own practice history from LeetCode and NeetCode.
 
 | Field | Justification |
 |---|---|
-| `storage` | Stores the user's review schedule, per-problem scheduling state and settings locally in the browser. This is the extension's entire dataset; there is no server. |
 | `sidePanel` | The review queue is presented in Chrome's side panel, which is the extension's primary interface. |
 | `alarms` | Periodically recomputes how many reviews are due so the toolbar badge stays accurate without polling. |
 | Host: `leetcode.com` | A content script on leetcode.com reads the signed-in user's own submission history (problem slugs, timestamps, verdicts) to schedule reviews from real solve dates. Reading it from that origin is what lets the user's existing session apply without the extension ever handling a credential. |
-| Host: `neetcode.io` | A content script on neetcode.io reads the signed-in user's own set of completed problems, which the page has already fetched and cached in localStorage. The extension issues no request of its own here. |
+| Host: `neetcode.io` | A content script on neetcode.io reads the signed-in user's own progress. The set of completed problems is read from a copy the page has already fetched and cached in localStorage, at no request cost. Per-submission dates come from neetcode.io's own activity endpoint, called from that origin, one throttled request per day the user was active. Those calls need the short-lived bearer token neetcode.io uses for itself: it is observed on a request the page has already made, held in memory for the life of the tab, and never stored, exported or sent anywhere else. |
 | Remote code | Not used. All code is bundled in the package; nothing is fetched or evaluated at runtime. |
+
+No `storage` permission is requested. Every byte the extension keeps is in IndexedDB,
+which needs none.
 
 **Data usage disclosures** — the dashboard requires you to tick what you collect. The
 honest answers:
@@ -163,8 +177,11 @@ purpose, no use for creditworthiness or lending.
 The extension reads nothing from either site until the privacy policy is accepted on the
 welcome page it opens at install. That gate covers the content scripts, not just the
 interface — before acceptance, no page is read, no request is made, and nothing is written
-to storage. Worth mentioning in the review notes, since it is the question the host
-permissions invite.
+to storage. Concretely: each content script sends one greeting to the background worker
+and waits; the MAIN-world collector that watches the site's own requests is not installed
+until that answer says the policy was accepted, and the LeetCode username is neither asked
+for nor stored before it. Worth mentioning in the review notes, since it is the question
+the host permissions invite.
 
 **Privacy policy URL**
 
@@ -257,5 +274,16 @@ answers, if they write:
   repetition scheduler with no history has nothing to schedule.
 - **Are you scraping or automating a third-party site?** No. Requests run from the user's
   own session, on the site's own origin, throttled to roughly one per second, and only to
-  read that user's own data. The NeetCode path issues no requests at all.
+  read that user's own data. On NeetCode the completed-problem set costs no request at all
+  — it is read from what the page has already cached — and the submission-history walk is
+  one request per day the user was active, capped at 600.
+- **Does the extension handle a credential?** On LeetCode, no: the session cookie is
+  HttpOnly and the browser attaches it. On NeetCode, yes and only there — the site
+  authenticates with a bearer token rather than a cookie, so the history walk reuses the
+  one the page itself just used. It is never read out of storage, never persisted, never
+  exported, and never sent anywhere but back to neetcode.io. `PRIVACY.md` § Credentials
+  says the same thing to the user.
+- **What runs before consent?** Nothing that reads. Both content scripts greet the
+  background worker and stop there until the policy is accepted; the collectors that watch
+  each site's own requests are not installed until the answer comes back.
 - **Where does the data go?** Nowhere. IndexedDB on the user's machine.

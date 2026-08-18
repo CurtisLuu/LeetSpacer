@@ -184,8 +184,14 @@ export interface PrivacyRevision {
 export const PRIVACY_REVISIONS: readonly PrivacyRevision[] = [
   {
     version: 1,
-    effective: "17 August 2026",
-    sha256: "810d201cb1188ae3a4adb9e36e5f27f993f24fdbf3442dce830a730aaf06c2fc",
+    // Amended before 1.0.0 shipped, so this revision has never been shown to anyone and
+    // there is no acceptance of an earlier text to carry forward: the `storage`
+    // permission row came out when the permission did, the credentials section now says
+    // how the NeetCode token is passed between LeetSpacer's own scripts, and the deletion
+    // controls now include erasing one site's data on its own. Once this is published, an
+    // entry is appended instead of edited.
+    effective: "18 August 2026",
+    sha256: "e87046963a9afd6838d6e67ff218b6715007a95b6d503f2208613340c76d2b17",
   },
 ];
 
@@ -226,6 +232,24 @@ export function hasAcceptedPrivacy(
   // all of them rather than a single threshold means a major revision can't be smuggled
   // past by a later minor one, and nothing has to be remembered when the next one ships.
   return revisions.every((r) => r.version <= accepted || r.carriesForward === true);
+}
+
+/**
+ * A snapshot's settings with the acceptance record removed.
+ *
+ * Consent is not data — it is a record of something the person in front of the browser
+ * did, and a file cannot do it for them. Without this, importing a JSON file whose
+ * `settings` happen to carry `privacyAcceptedAt` would mark the policy accepted on this
+ * install, which is a consent gate that a file can open.
+ *
+ * Everything else in the snapshot is theirs to restore. Merging the result over the
+ * current settings leaves the local acceptance exactly as it was.
+ */
+export function settingsWithoutConsent(
+  settings: Settings,
+): Omit<Settings, "privacyAcceptedAt" | "privacyAcceptedVersion"> {
+  const { privacyAcceptedAt: _at, privacyAcceptedVersion: _version, ...rest } = settings;
+  return rest;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

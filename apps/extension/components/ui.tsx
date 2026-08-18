@@ -11,6 +11,7 @@ export * from "./button";
 export * from "./callout";
 export * from "./consent-gate";
 export * from "./cx";
+export * from "./error-boundary";
 export * from "./field";
 export * from "./grade-button";
 export * from "./logo";
@@ -185,9 +186,18 @@ export function ProviderCard({ status }: { status: ProviderStatus }) {
     <Card>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
         <span className="min-w-0 truncate font-semibold text-ink">{label.name}</span>
-        <Badge tone={status.connected ? "good" : "neutral"} dot>
-          {status.connected ? "connected" : "no tab open"}
-        </Badge>
+        {/* Three states, not two. A source switched off in Settings is not "no tab open" —
+            it is doing exactly what it was told, and saying "no tab open" invites you to
+            open a tab that will politely refuse to read anything. */}
+        {status.enabled ? (
+          <Badge tone={status.connected ? "good" : "neutral"} dot>
+            {status.connected ? "connected" : "no tab open"}
+          </Badge>
+        ) : (
+          <Badge tone="warn" dot>
+            switched off
+          </Badge>
+        )}
       </div>
 
       {status.username ? (
@@ -204,24 +214,28 @@ export function ProviderCard({ status }: { status: ProviderStatus }) {
           reading happens inside a tab on the site. Saying so is the difference between an
           honest instruction and a page that looks like it forgot a button. */}
       <p className="mt-1.5 text-xs text-ink-subtle">
-        {status.lastFullSyncAt
-          ? `Syncing runs inside a ${label.host} tab. Open one to pick up anything new.`
-          : `Open ${label.host} signed in to backfill your history. The first sync takes a minute or two.`}
+        {!status.enabled
+          ? `Nothing is read from ${label.host} while this source is off. Turn it back on under Settings → Your history.`
+          : status.lastFullSyncAt
+            ? `Syncing runs inside a ${label.host} tab. Open one to pick up anything new.`
+            : `Open ${label.host} signed in to backfill your history. The first sync takes a minute or two.`}
       </p>
 
-      {status.lastFailure ? <FailureNote status={status} /> : null}
+      {status.enabled && status.lastFailure ? <FailureNote status={status} /> : null}
 
-      <ButtonLink
-        className="mt-2"
-        size="sm"
-        variant={status.lastFullSyncAt ? "secondary" : "primary"}
-        href={label.url}
-        target="_blank"
-        rel="noreferrer"
-        icon={<ExternalIcon />}
-      >
-        {status.lastFullSyncAt ? `Sync in ${label.host}` : `Connect ${label.name}`}
-      </ButtonLink>
+      {status.enabled ? (
+        <ButtonLink
+          className="mt-2"
+          size="sm"
+          variant={status.lastFullSyncAt ? "secondary" : "primary"}
+          href={label.url}
+          target="_blank"
+          rel="noreferrer"
+          icon={<ExternalIcon />}
+        >
+          {status.lastFullSyncAt ? `Sync in ${label.host}` : `Connect ${label.name}`}
+        </ButtonLink>
+      ) : null}
     </Card>
   );
 }

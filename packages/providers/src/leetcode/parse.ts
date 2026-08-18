@@ -36,15 +36,28 @@ function str(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+/**
+ * The window a real submission date can fall in.
+ *
+ * The lower bound predates LeetCode. The upper bound is what catches the failure this
+ * gate exists for: if LeetCode ever reports these in milliseconds instead of seconds, the
+ * multiply below lands every solve around the year 51,000 — and a card due then is a card
+ * that never comes due again, silently, for everything you have ever solved. Rejecting is
+ * always right here, because a dropped row is re-read on the next sync and a fabricated
+ * date is not recoverable.
+ */
+const EARLIEST_PLAUSIBLE = Date.UTC(2010, 0, 1);
+const LATEST_PLAUSIBLE = Date.UTC(2100, 0, 1);
+
 /** LeetCode returns epoch *seconds*, sometimes as a string. Milliseconds, or null. */
 export function toMillis(value: unknown): Timestamp | null {
   const seconds =
     typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
   if (!Number.isFinite(seconds) || seconds <= 0) return null;
-  // A plausibility gate: anything before LeetCode existed, or in the future, is a shape
-  // change we've misread rather than a real submission.
+  // A plausibility gate: anything before LeetCode existed, or far in the future, is a
+  // shape change we've misread rather than a real submission.
   const millis = seconds * 1000;
-  if (millis < Date.UTC(2010, 0, 1)) return null;
+  if (millis < EARLIEST_PLAUSIBLE || millis > LATEST_PLAUSIBLE) return null;
   return millis;
 }
 
@@ -232,9 +245,27 @@ export interface SubmissionCheck {
 
 const CHECK_URL = /\/submissions\/detail\/(\d+)\/check\/?/;
 
-/** Does this URL look like the poll LeetCode runs while a submission is judged? */
-export function isSubmissionCheckUrl(url: string): boolean {
-  return CHECK_URL.test(url);
+/** Hosts a check URL may live on. Anything else is not LeetCode's judge, whatever it spells. */
+const LEETCODE_HOSTS = new Set(["leetcode.com", "www.leetcode.com"]);
+
+/**
+ * Does this URL look like the poll LeetCode runs while a submission is judged?
+ *
+ * Doubles as the MAIN-world observer's allow-list, which is why the host is checked and
+ * not just the path: an observer filter that matches on a path fragment alone will
+ * eventually match a request to somewhere else entirely. `base` resolves the page's own
+ * relative URLs and is the observing page's origin.
+ */
+export function isSubmissionCheckUrl(url: string, base = "https://leetcode.com"): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url, base);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  if (!LEETCODE_HOSTS.has(parsed.hostname.toLowerCase())) return false;
+  return CHECK_URL.test(parsed.pathname);
 }
 
 /** The submission id from the poll URL — the body doesn't carry one. */

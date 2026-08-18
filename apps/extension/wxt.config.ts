@@ -16,6 +16,17 @@ export default defineConfig({
 
   manifest: {
     name: "LeetSpacer",
+    // Under Chrome's 12-character display budget, so the toolbar and the extensions page
+    // show the real name rather than a truncation of it.
+    short_name: "LeetSpacer",
+    // `side_panel` landed in Chrome 114. Without this, an older browser installs the
+    // extension and lands on a panel API that isn't there; with it, Chrome refuses the
+    // install cleanly and says why.
+    minimum_chrome_version: "114",
+    // No `author`. The field takes the publishing account's email address, and the
+    // manifest ships inside the package — so anyone who unpacks the extension, or reads
+    // this file, has the maintainer's personal address. Chrome does not require it, and
+    // nothing about the listing is worse without it. Leave it out.
     // 127 characters. The store truncates at 132, so this fits whole rather than being
     // cut mid-word in the listing.
     description:
@@ -33,9 +44,13 @@ export default defineConfig({
 
     homepage_url: "https://github.com/CurtisLuu/LeetSpacer",
 
-    // Deliberately small. `storage` for local state, `sidePanel` for the main UI,
-    // `alarms` to schedule background syncs. No `tabs`, no `<all_urls>`, no remote code.
-    permissions: ["storage", "sidePanel", "alarms"],
+    // Deliberately small. `sidePanel` for the main UI, `alarms` to schedule background
+    // syncs. No `tabs`, no `<all_urls>`, no remote code.
+    //
+    // No `storage`: every byte this extension keeps is in IndexedDB, which needs no
+    // permission at all. Declaring one nothing calls is a routine rejection, and it
+    // overstates what the extension can reach.
+    permissions: ["sidePanel", "alarms"],
 
     // Both sites are read from a content script on their own origin, using the session
     // you're already signed in with. Content scripts are declared statically, so these

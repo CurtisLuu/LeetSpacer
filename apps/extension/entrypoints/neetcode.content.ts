@@ -1,6 +1,7 @@
 import {
   PROGRESS_CACHE_KEY,
   type NeetcodeSyncCtx,
+  SyncError,
   completedToEvents,
   createThrottle,
   isCompletedProblemsCall,
@@ -11,7 +12,7 @@ import {
 
 import { type SyncMode, send } from "../lib/messaging.js";
 import { createNeetcodeTransport } from "../lib/neetcode-transport.js";
-import { isPageObservation } from "../lib/page-bridge.js";
+import { type PageBridge, openPageBridge } from "../lib/page-bridge.js";
 
 /**
  * ISOLATED world on neetcode.io.
@@ -28,6 +29,10 @@ import { isPageObservation } from "../lib/page-bridge.js";
  * completed set can't provide: per-submission dates and verdicts. That walk does issue
  * requests and does use the page's Firebase token — see `lib/neetcode-transport.ts` for
  * why there's no way around it and what the token is and isn't used for.
+ *
+ * The MAIN-world observer that supplies both is not running when this starts. It is told
+ * to begin only after the background confirms the policy is accepted and NeetCode is
+ * switched on, so a page visited before either is left completely untouched.
  */
 
 /**
@@ -40,6 +45,14 @@ let observedToken: string | null = null;
 
 /** Relayed requests seen so far, to tell a dead bridge from an unseen header. */
 let observedCalls = 0;
+
+/**
+ * The private channel to the MAIN world.
+ *
+ * Opened at the top of the script — the offer has to be on the wire before the page's
+ * first script runs — but it carries nothing until `observe()` is called below.
+ */
+const bridge: PageBridge = openPageBridge();
 
 /** Resolves once the page has made an authenticated call we could learn from. */
 function waitForSession(signal: AbortSignal): Promise<boolean> {
@@ -67,22 +80,28 @@ const THROTTLE_JITTER_MS = 400;
 
 export default defineContentScript({
   matches: ["https://neetcode.io/*"],
-  // document_start so the bridge listener exists before the page's load-time requests.
+  // document_start is required, not preferred: it is what puts the port handshake with
+  // the MAIN world ahead of the page's first script. See `lib/page-bridge.ts`.
   runAt: "document_start",
   async main(ctx) {
     // Nothing in here may throw. WXT awaits `main`, and an escaping rejection takes the
     // whole content script down — including the passive completed-set read, which works
     // with or without any of the activity machinery.
     try {
-      const hello = await send("provider:hello", {
-        provider: "neetcode",
-        url: location.href,
-      }).catch(() => null);
+      const hello = await send("provider:hello", { provider: "neetcode" }).catch(() => null);
 
       // Nothing is read before the privacy policy is accepted — not the page's cached
-      // progress, not its requests, nothing.
+      // progress, not its requests, nothing. The MAIN-world observer is still unpatched
+      // at this point and stays that way if we return here.
       if (!hello?.consented) {
         console.info("[lcs] neetcode: waiting for the privacy policy to be accepted");
+        return;
+      }
+
+      // Settings -> Your history says turning a source off stops it being read, so this
+      // has to stand the collectors down too, not just skip the history walk.
+      if (!hello.enabled) {
+        console.info("[lcs] neetcode: source switched off in settings");
         return;
       }
 
@@ -164,6 +183,9 @@ async function syncActivity(signal: AbortSignal): Promise<void> {
     for await (const events of stream) {
       if (signal.aborted) break;
       const result = await send("events:ingest", { provider: "neetcode", events });
+      // A write that couldn't happen at all — a full profile. Nothing further will land
+      // either, so stop and report it instead of walking the rest of the history.
+      if (result.failure) throw new SyncError(result.failure, `ingest refused: ${result.failure}`);
       inserted += result.inserted;
       for (const slug of result.updatedProblems) touched.add(slug);
     }
@@ -202,18 +224,27 @@ function ingest(raw: unknown, source: string): void {
   // path — the activity walk marks completion, so this one no longer claims to.
   void send("events:ingest", { provider: "neetcode", events })
     .then((result) => {
+      if (result.failure) {
+        console.warn(`[lcs] ${source}: not stored (${result.failure})`);
+        // Nothing was written, so the next read of the same set must not be skipped as a
+        // duplicate.
+        lastSent = "";
+        return;
+      }
       console.debug(`[lcs] ${source}: ${completed.length} completed, ${result.inserted} new`);
     })
-    .catch(() => {});
+    .catch(() => {
+      lastSent = "";
+    });
 }
 
 function watchForProgress(): void {
-  // The response the page fetches for itself, relayed from the MAIN-world observer.
-  window.addEventListener("message", (event) => {
-    if (event.source !== window) return;
-    if (!isPageObservation(event.data)) return;
+  // Let the MAIN world start watching. Nothing was patched before this line.
+  bridge.observe();
 
-    const observation = event.data;
+  // The response the page fetches for itself, relayed over the private port. Nothing
+  // else on the page can post here, so an observation is the observer's or nobody's.
+  bridge.onObservation((observation) => {
     observedCalls += 1;
     if (observation.authorization && !observedToken) {
       observedToken = observation.authorization;

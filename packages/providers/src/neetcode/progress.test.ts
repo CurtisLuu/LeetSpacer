@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   completedToEvents,
+  isObservableNeetcodeUrl,
   parseCompletedProblems,
   slugFromLeetcodeUrl,
 } from "./progress.js";
@@ -110,5 +111,49 @@ describe("completedToEvents", () => {
     const events = completedToEvents(parseCompletedProblems({ data: TOPICS }), NOW);
 
     expect(new Set(events.map((e) => e.id)).size).toBe(3);
+  });
+});
+
+describe("isObservableNeetcodeUrl", () => {
+  it("accepts the callable endpoint, however the page spells it", () => {
+    expect(isObservableNeetcodeUrl("/api/callableFunctionHttp")).toBe(true);
+    expect(isObservableNeetcodeUrl("https://neetcode.io/api/callableFunctionHttp")).toBe(true);
+    expect(isObservableNeetcodeUrl("https://www.neetcode.io/api/callableFunctionHttp?x=1")).toBe(true);
+    expect(isObservableNeetcodeUrl("/api/callablefunctionhttp/")).toBe(true);
+  });
+
+  it("never matches Firebase's auth endpoints", () => {
+    // The reason this function exists. The old substring filter matched both of these,
+    // which put an email, a plaintext password and a refresh token through the observer.
+    expect(
+      isObservableNeetcodeUrl(
+        "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=abc",
+      ),
+    ).toBe(false);
+    expect(isObservableNeetcodeUrl("https://securetoken.googleapis.com/v1/token?key=abc")).toBe(
+      false,
+    );
+  });
+
+  it("never matches another host, however the URL is dressed up", () => {
+    expect(isObservableNeetcodeUrl("https://firestore.googleapis.com/v1/projects/x")).toBe(false);
+    expect(isObservableNeetcodeUrl("https://evil.example/api/callableFunctionHttp")).toBe(false);
+    // A hostname that merely ends in the real one.
+    expect(isObservableNeetcodeUrl("https://neetcode.io.evil.example/api/callableFunctionHttp")).toBe(
+      false,
+    );
+    // Protocol-relative, so the leading slashes make it cross-origin rather than a path.
+    expect(isObservableNeetcodeUrl("//identitytoolkit.googleapis.com/api/callableFunctionHttp")).toBe(
+      false,
+    );
+    expect(isObservableNeetcodeUrl("http://neetcode.io/api/callableFunctionHttp")).toBe(false);
+  });
+
+  it("rejects other paths on the right host, and unparseable input", () => {
+    expect(isObservableNeetcodeUrl("/api/somethingElse")).toBe(false);
+    expect(isObservableNeetcodeUrl("/practice")).toBe(false);
+    expect(isObservableNeetcodeUrl("https://neetcode.io/api/callableFunctionHttpExtra")).toBe(false);
+    expect(isObservableNeetcodeUrl("")).toBe(false);
+    expect(isObservableNeetcodeUrl(":::")).toBe(false);
   });
 });

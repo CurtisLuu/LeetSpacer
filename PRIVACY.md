@@ -1,6 +1,6 @@
 # Privacy Policy — LeetSpacer
 
-**Effective 17 August 2026.** This is the current version; earlier ones are in this
+**Effective 18 August 2026.** This is the current version; earlier ones are in this
 repository's history.
 
 LeetSpacer is a free, open-source Chrome extension maintained by an individual developer.
@@ -83,7 +83,11 @@ contact anything to work.
 
 Your data stays until you remove it. There is no expiry and no background deletion.
 
-- **Settings → Reset all data** erases every tracked problem, review card and grade.
+- **Settings → Reset the LeetCode track** or **Reset the NeetCode track** erases what that
+  one site contributed — its problems, its review cards and their grades, and the record of
+  your username there — and leaves the other site's data untouched.
+- **Settings → Reset all data** erases every tracked problem, review card and grade, from
+  both sites.
 - **Uninstalling the extension** deletes everything, including settings. Chrome removes an
   extension's storage when it is removed.
 - **Settings → Export JSON** writes your entire dataset to a file first, if you want a copy.
@@ -93,6 +97,8 @@ Your data stays until you remove it. There is no expiry and no background deleti
 - **Turn a source off.** Settings → Your history has an independent switch for LeetCode and
   for NeetCode. Turning one off stops it being read; anything already collected stays until
   you delete it.
+- **Delete one site's data.** The two sites are kept separate all the way down, so either
+  can be erased on its own without touching the other. See the resets above.
 - **Export** and **reset**, as above.
 - **Read the code.** Every claim here is verifiable in the repository.
 
@@ -109,20 +115,22 @@ your history is not possible without one. LeetSpacer reuses the token from a req
 neetcode.io has already made itself — it is observed in passing, not extracted from storage.
 It is held in memory only for as long as that tab is open, used only for requests back to
 neetcode.io, never written to storage, never included in an export, and never sent anywhere
-else. If you would rather it did not, turn NeetCode off under Settings → Your history.
+else. It is passed between LeetSpacer's own two scripts over a private channel that the
+page cannot read, so observing it does not expose it to neetcode.io or anything running
+there. If you would rather it did not, turn NeetCode off under Settings → Your history.
 
 ## Permissions, and why each is needed
 
 | Permission | Why |
 |---|---|
-| `storage` | Keeps your review schedule and settings in the browser. |
 | `sidePanel` | The review queue is a side panel. |
 | `alarms` | Wakes the extension periodically to refresh the due-count badge. |
 | Access to `leetcode.com` | Read your own history from a script on that origin. |
 | Access to `neetcode.io` | Read your own history from a script on that origin. |
 
-LeetSpacer requests no `tabs` permission, no `<all_urls>`, and executes no remotely hosted
-code. Everything it runs ships inside the extension package.
+Your review schedule and settings are kept in IndexedDB, which needs no permission at all,
+so none is requested for it. LeetSpacer requests no `tabs` permission, no `<all_urls>`, and
+executes no remotely hosted code. Everything it runs ships inside the extension package.
 
 ## Third-party sites
 

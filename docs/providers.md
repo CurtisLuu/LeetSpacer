@@ -5,9 +5,12 @@ in `packages/providers` should trace back to something recorded here, with a cap
 response in `fixtures/` backing it.
 
 **Ground rules for everything in this document.** We read only the signed-in user's own
-data, only from a content script running on that origin (so their cookies apply and we
-never make a cross-origin request or handle a credential), throttled via
-`createThrottle`, and never from a server.
+data, only from a content script running on that origin (so their session applies and we
+never make a cross-origin request), throttled via `createThrottle`, and never from a
+server. One credential is handled, in one place: NeetCode's activity walk borrows the
+bearer token the page itself just used, because that site authenticates with a token
+rather than a cookie. It is documented under **NeetCode** below and in `PRIVACY.md`, and
+nothing else in the extension touches one.
 
 ---
 
@@ -213,6 +216,21 @@ instead; the page makes one on load, so the token used is by definition one that
 worked. Held in memory for the life of the tab, never stored or transmitted. A 401
 mid-walk means it aged out, and the fix is to reload the page.
 
+Two constraints on that observer, both load-bearing:
+
+- **It sees one endpoint.** `isObservableNeetcodeUrl` allows `POST
+  /api/callableFunctionHttp` on neetcode.io and nothing else — parsed, not pattern
+  matched. The filter it replaced (`/firestore|googleapis|firebaseio|\/api\/|graphql/i`)
+  also matched `identitytoolkit.googleapis.com/…:signInWithPassword` and
+  `securetoken.googleapis.com/v1/token`, so signing in put an email, a plaintext password
+  and a refresh token through it. A filter for an observer is an allow-list of endpoints
+  the adapter consumes, never a guess at what looks interesting.
+- **It reaches the extension, and only the extension.** Observations cross a private
+  `MessageChannel` opened between the two worlds at `document_start`, before the page's
+  first script runs — not `window.postMessage`, which every script on the origin can
+  read and write. See `apps/extension/lib/page-bridge.ts`; nothing is patched at all
+  until the ISOLATED world confirms the privacy policy was accepted.
+
 ### Still unconfirmed
 
 Curated list membership (Blind 75 / NC150 / NC250) and the roadmap's prerequisite edges.
@@ -223,42 +241,34 @@ A DOM capture found no `a[href*="leetcode.com"]` anchors on the practice page, s
 earlier plan of scraping problem rows for the join key was wrong — and unnecessary, given
 the above.
 
-### To verify — capture mode covers this too
+### Still open, and how to answer it by hand
 
-NeetCode needs more than network capture, because the interesting state may never cross
-the wire: anonymous progress lives in `localStorage`, and list membership is rendered
-straight into the page. So the NeetCode content script also runs **snapshots** whenever
-capture mode is on —
-
-- `localStorage` (every key; values redacted when the key or content looks like a
-  credential, since Firebase parks live auth tokens there),
-- IndexedDB **database names only**, as a pointer for where to look next,
-- the first 12 **problem rows**, found via `a[href*="leetcode.com"]` — those outbound
-  links carry the `titleSlug` that joins the two sites, and the surrounding row markup
-  shows how a solved item is marked.
-
-Snapshots re-run on client-side navigation, so walking between `/practice` and `/roadmap`
-captures both. What to check once the export is in:
+> **No "capture mode" ships, and none ever did.** An earlier draft of this document
+> described a mode in which the NeetCode content script snapshotted every `localStorage`
+> key, the names of every IndexedDB database, and a sample of problem rows from the DOM.
+> That was a plan, not code: no such snapshotting exists anywhere in the extension, and
+> nothing like it may be added without a privacy-policy revision, because `PRIVACY.md`
+> enumerates what is read. The plan is retired — what remains below is the list of things
+> still unknown, to be answered with DevTools by hand.
 
 1. **Anonymous progress.** With no account, tick a few problems on `neetcode.io/practice`
-   and confirm the `localStorage` snapshot shows them. Record the exact keys and value
-   shapes.
-2. **Signed-in progress.** Sign in, then watch the Network tab for the call that loads
-   progress (expected: Firestore, either REST or gRPC-web). Record the URL pattern and
-   response shape. If it's only reachable as gRPC-web, prefer the DOM route below.
-3. **DOM structure.** Capture the practice-table markup: how a solved row is marked, and
-   how each row links out to LeetCode. The outbound href is how we recover the canonical
-   `titleSlug` — this is the join key for the whole system.
-4. **Roadmap edges.** Compare the live roadmap against the hand-seeded DAG in
+   and read `localStorage` in DevTools. Record the exact keys and value shapes. The
+   adapter reads exactly one key today, `synced-progress-cache`.
+2. **Signed-in progress.** Signed in, watch the Network tab for the call that loads
+   progress. The shipped path reads it from the completed-problems callable the page makes
+   on load; whether Firestore carries anything the callable doesn't is unconfirmed, and
+   the observer is not permitted to look — its allow-list is neetcode.io's own callable
+   endpoint and nothing else.
+3. **Roadmap edges.** Compare the live roadmap against the hand-seeded DAG in
    `packages/catalog/data/roadmap.json` and correct any differences. That seed is an
-   informed guess, not a capture.
-5. **List membership.** Capture which problems belong to Blind 75 / NC150 / NC250 and
+   informed guess.
+4. **List membership.** Work out which problems belong to Blind 75 / NC150 / NC250 and
    generate an overlay that fills `Problem.lists` and `Problem.roadmapTopic`. These are
    deliberately empty in the generated catalog rather than hardcoded, because neetcode.io
    is the authority and a hardcoded list drifts silently.
 
 ### Preference order
 
-`localStorage`/IndexedDB → rendered DOM → observing the app's own network calls from the
-MAIN world. The DOM is last-resort-proof: the checkmarks are what the user actually sees,
-so if they're on screen we can read them.
+`localStorage` → observing the app's own network calls from the MAIN world → rendered DOM.
+Whatever the source, it is read only if `PRIVACY.md` says it is, and the observer only
+ever sees the exact endpoint the adapter consumes — see `isObservableNeetcodeUrl`.

@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import "../../assets/tailwind.css";
-import { ConsentGate } from "../../components/ui";
+import { ConsentGate, ErrorBoundary } from "../../components/ui";
 import { App } from "./App";
 
 const container = document.getElementById("root");
@@ -10,8 +10,10 @@ if (!container) throw new Error("options root element missing");
 
 createRoot(container).render(
   <StrictMode>
-    <ConsentGate>
-      <App />
-    </ConsentGate>
+    <ErrorBoundary surface="options page">
+      <ConsentGate>
+        <App />
+      </ConsentGate>
+    </ErrorBoundary>
   </StrictMode>,
 );

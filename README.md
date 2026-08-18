@@ -1,8 +1,7 @@
 # LeetSpacer
 
 A Chrome extension that reads your own LeetCode and NeetCode progress and tells you what
-to practice next — due reviews scheduled by spaced repetition, plus new problems chosen
-to fill topic gaps, mined from failures, and weighted toward a target company.
+to review today — spaced repetition scheduled from when you actually solved each problem.
 
 Everything stays on your device. There is no backend and no account.
 
@@ -34,8 +33,10 @@ That walk needs a bearer token, because NeetCode authenticates with one rather t
 cookie. It is not read out of storage — the copy Firebase keeps there expires hourly and is
 usually stale. Instead the token is taken from a request neetcode.io has already made
 itself, held in memory for the life of the tab, used only for calls back to neetcode.io,
-and never stored or transmitted. This is the one place the extension handles a credential
-at all; if you would rather it did not, turn NeetCode off under Settings → Your history.
+and never stored or transmitted. It travels between the extension's two scripts over a
+private `MessageChannel`, so it is never posted onto a bus the page can listen on. This is
+the one place the extension handles a credential at all; if you would rather it did not,
+turn NeetCode off under Settings → Your history.
 
 Both sources identify problems by **LeetCode slug**, so both join straight to the bundled
 catalogue for real titles, difficulty, and topic tags. See
@@ -44,6 +45,15 @@ catalogue for real titles, difficulty, and topic tags. See
 Note that the two are kept apart all the way down: what LeetCode knows about a problem and
 what NeetCode knows are separate records, never merged. Four attempts on LeetCode says
 nothing about how it went on NeetCode.
+
+This is closer to two applications sharing a toolbar icon than to one application with a
+filter. Problem state is addressed by `(provider, slug)`, cards and review logs by
+`(track, slug)`, every count is read through an index scoped to one of them, and settings
+are written one source or one track at a time — a write that names both is not a shape the
+store offers. `packages/core/src/separation.test.ts` is the list of what that has to mean:
+a problem solved on both sites keeps two records and two schedules, grading it in one track
+leaves the other untouched, and rescheduling a track reads only its own provider's history.
+The only thing the two share is the slug that names a problem.
 
 ## Two tracks
 
@@ -115,6 +125,11 @@ per track, in Settings:
 
 **Apply to the … track** re-runs this over anything you haven't graded yet, in that track
 only; problems with review history are never touched, and neither is the other track.
+
+Starting over is per track too. **Settings → Start over** can clear the LeetCode track or
+the NeetCode track on its own — its problems, its cards and their grades, plus its sync
+cursors so the site re-imports from scratch — leaving the other one untouched, or clear
+both at once.
 
 `packages/importers` holds a developer CLI (`pnpm import:neetcode`) that reads solve dates
 out of a NeetCode GitHub Sync repository. It is not part of the extension, which requests
@@ -222,17 +237,17 @@ extension.
 | Path | What lives there |
 |---|---|
 | `packages/core` | Domain model, event folding, `Store` interface. Pure TypeScript — no browser APIs, no framework. |
-| `packages/store` | IndexedDB implementation of `Store`, and the schema migrations — per-track cards, then per-provider problem state. |
+| `packages/store` | IndexedDB implementation of `Store`, and the schema migrations — per-track cards, then per-provider problem state, then the indexes each track's counts are read through. |
 | `packages/catalog` | The bundled problem dataset (4,028 problems), the NeetCode roadmap DAG, and the LeetCode→NeetCode slug map. |
 | `packages/providers` | Site adapters for both sites: response parsing and sync orchestration, with the transport injected so both are testable in Node. |
 | `apps/extension` | WXT + React: background worker, side panel, popup, options, content scripts. |
 
 The important boundary: `@lcs/core` knows nothing about browsers or websites, so the
-scheduler and recommender are testable in Node and reusable verbatim if a web dashboard
-is ever added. `@lcs/providers` knows about websites but not about browsers — both
-adapters take their transport as an argument, which is why their full and incremental syncs
-have real tests rather than mocked ones. Persistence goes through one interface, which is the entire cost of
-adding sync later.
+scheduler is testable in Node and reusable verbatim if a web dashboard is ever added.
+`@lcs/providers` knows about websites but not about browsers — both adapters take their
+transport as an argument, which is why their full and incremental syncs have real tests
+rather than mocked ones. Persistence goes through one interface, which is the entire cost
+of adding sync later.
 
 The internal package scope is still `@lcs/*`, from the project's old name. It's invisible
 to users and renaming it would touch every import, so it stayed.
@@ -242,7 +257,7 @@ to users and renaming it would touch every import, so it stayed.
 ```sh
 pnpm install
 pnpm dev            # runs the extension in a dev browser with HMR
-pnpm test           # 239 tests across core, store, catalog, providers, importers
+pnpm test           # 331 tests across core, store, catalog, providers, importers, extension
 pnpm typecheck
 pnpm build          # production build -> apps/extension/.output/chrome-mv3
 pnpm catalog:build  # regenerate the problem dataset from LeetCode's public API
@@ -252,19 +267,22 @@ pnpm neetcode:map   # regenerate the LeetCode -> NeetCode slug map
 To load it manually: `pnpm build`, then Chrome → Extensions → Developer mode → **Load
 unpacked** → `apps/extension/.output/chrome-mv3`.
 
-Node 20+ required. The two data build steps are developer steps — both datasets ship
-bundled so the extension never generates traffic just to learn which problems exist.
+Node 22.13+ required, which is pnpm 11's floor. The two data build steps are developer
+steps — both datasets ship bundled so the extension never generates traffic just to learn
+which problems exist.
 
 ## Data and permissions
 
-- Permissions requested: `storage`, `sidePanel`, `alarms`, and host access to
-  `leetcode.com` and `neetcode.io`. No `tabs`, no `<all_urls>`, no remote code.
+- Permissions requested: `sidePanel`, `alarms`, and host access to `leetcode.com` and
+  `neetcode.io`. No `tabs`, no `<all_urls>`, no remote code, and no `storage` — everything
+  is kept in IndexedDB, which needs no permission.
 - All reads happen from a content script on the site's own origin, using the session
-  you're already signed in with. The extension never handles a credential, never makes a
-  cross-origin request, and never transmits anything off your machine. LeetCode's session
-  cookie is HttpOnly, so it is not readable even in principle; the `csrftoken` cookie is
-  echoed back on user-scoped queries exactly as LeetCode's own front end does.
+  you're already signed in with. Nothing goes off your machine and no cross-origin request
+  is made. On LeetCode no credential is handled at all: the session cookie is HttpOnly, so
+  it is not readable even in principle, and the `csrftoken` cookie is echoed back on
+  user-scoped queries exactly as LeetCode's own front end does. NeetCode is the one
+  exception, described above.
+- Nothing is read until the privacy policy is accepted — including the collectors that
+  watch each site's own requests, which are not installed before the answer arrives.
 - Requests are throttled (roughly one per second, with jitter) and prefer incremental
   sync. A full history walk is capped and reports when it stops early.
-- Company-tag data is community-sourced and used as a weighting hint, never a hard
-  filter — LeetCode gates real company tags behind Premium.

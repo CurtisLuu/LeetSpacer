@@ -63,3 +63,29 @@ export function formatCountdown(msUntilDue: number): string {
 export function isImminent(msUntilDue: number): boolean {
   return msUntilDue > 0 && msUntilDue < 60 * 60 * 1000;
 }
+
+/**
+ * "later today" / "tomorrow" / "Thursday" / "18 Aug" — the shortest unambiguous form.
+ *
+ * Counted in calendar days from local midnight, not in 24-hour blocks. Rounding the
+ * difference in milliseconds called anything inside a day "tomorrow", so a card coming
+ * back at nine tonight was announced as tomorrow's — and "today" already means midnight
+ * to midnight everywhere else in the app, including the reviewed-today count.
+ */
+export function formatDueDate(at: number, now: number = Date.now()): string {
+  const days = calendarDaysBetween(now, at);
+  if (days <= 0) return at <= now ? "now" : "later today";
+  if (days === 1) return "tomorrow";
+  if (days < 7) return new Date(at).toLocaleDateString(undefined, { weekday: "long" });
+  return new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/** Whole days between the local midnights either timestamp falls in. */
+function calendarDaysBetween(from: number, to: number): number {
+  const start = new Date(from);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(to);
+  end.setHours(0, 0, 0, 0);
+  // Rounded, not floored: a DST boundary makes one of these days 23 or 25 hours long.
+  return Math.round((end.getTime() - start.getTime()) / 86_400_000);
+}

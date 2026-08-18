@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Spaced-repetition and gap-analysis recommendations over your LeetCode and NeetCode history",
+  "description": "Spaced-repetition review scheduling over your own LeetCode and NeetCode history",
   "scripts": {
     "dev": "pnpm --filter @lcs/extension dev",
     "build": "pnpm -r --if-present build",

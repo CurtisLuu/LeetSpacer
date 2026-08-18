@@ -1,6 +1,7 @@
 import type { ProgressEvent } from "@lcs/core";
 import {
   type SyncCtx,
+  SyncError,
   checkToEvent,
   classifySyncError,
   createThrottle,
@@ -13,7 +14,7 @@ import {
 
 import { createLeetcodeTransport } from "../lib/leetcode-transport.js";
 import { type SyncMode, send } from "../lib/messaging.js";
-import { isPageObservation } from "../lib/page-bridge.js";
+import { type PageBridge, openPageBridge } from "../lib/page-bridge.js";
 
 /**
  * ISOLATED world on leetcode.com.
@@ -27,31 +28,44 @@ import { isPageObservation } from "../lib/page-bridge.js";
  *   - **Live verdicts.** Relays the judge's result the moment a submission is decided,
  *     from the MAIN-world observer.
  *
- * Every request is same-origin and throttled. The extension never handles a credential —
- * the session cookie rides along because this code runs on leetcode.com, which is the
- * same reason it can't be done from the background worker.
+ * Every request is same-origin and throttled. No credential is ever read or held — the
+ * session cookie rides along because this code runs on leetcode.com, which is the same
+ * reason it can't be done from the background worker.
  */
 
 /** Spacing between round trips. A full history walk should read like browsing, not scraping. */
 const THROTTLE_MS = 1_100;
 const THROTTLE_JITTER_MS = 400;
 
+/**
+ * The private channel to the MAIN world.
+ *
+ * Opened at the top of the script, before the page's first script runs, and silent until
+ * `observe()` is called — see `lib/page-bridge.ts`.
+ */
+const bridge: PageBridge = openPageBridge();
+
 export default defineContentScript({
   matches: ["https://leetcode.com/*"],
-  runAt: "document_idle",
+  // document_start is required, not preferred: it is what puts the port handshake with
+  // the MAIN world ahead of the page's first script. Everything below is async anyway,
+  // and nothing here touches the DOM.
+  runAt: "document_start",
   async main(ctx) {
-    const transport = createLeetcodeTransport();
+    // The greeting comes first and carries no username, because finding one out means a
+    // credentialed request to /graphql/ — reading the page. `PRIVACY.md` says nothing is
+    // read until the policy is accepted, so nothing may happen before this answer.
+    const hello = await send("provider:hello", { provider: "leetcode" }).catch(() => null);
 
-    const auth = await leetcodeSync.detectAuth(transport);
-    const hello = await send("provider:hello", {
-      provider: "leetcode",
-      url: location.href,
-      username: auth.signedIn ? auth.username : null,
-    }).catch(() => null);
-
-    // Nothing is read before the privacy policy is accepted, including the verdict relay.
     if (!hello?.consented) {
       console.info("[lcs] leetcode: waiting for the privacy policy to be accepted");
+      return;
+    }
+
+    // Settings -> Your history promises this stops the site being read at all, not just
+    // that it stops the history walk.
+    if (!hello.enabled) {
+      console.info("[lcs] leetcode: source switched off in settings");
       return;
     }
 
@@ -59,7 +73,15 @@ export default defineContentScript({
     // landing while a slow sync is still running shouldn't be missed.
     watchForVerdicts();
 
+    const transport = createLeetcodeTransport();
+    const auth = await leetcodeSync.detectAuth(transport);
     if (!auth.signedIn) return;
+
+    // Now that there is a username to report, and consent to report it under.
+    await send("provider:hello", {
+      provider: "leetcode",
+      username: auth.username,
+    }).catch(() => null);
 
     // `ctx` aborts when the content script is invalidated — an extension reload, or a
     // navigation that tears down the document. Without it a full sync would keep paging
@@ -104,6 +126,9 @@ async function syncIfClaimed(
     for await (const events of stream) {
       if (signal.aborted) break;
       const result = await send("events:ingest", { provider: "leetcode", events });
+      // A write that couldn't happen at all — a full profile. Paging on would spend
+      // minutes reading a history nothing can store.
+      if (result.failure) throw new SyncError(result.failure, `ingest refused: ${result.failure}`);
       inserted += result.inserted;
       for (const slug of result.updatedProblems) touched.add(slug);
     }
@@ -132,11 +157,10 @@ async function syncIfClaimed(
  * that a later history sync will produce again for the same submission, so it lands once.
  */
 function watchForVerdicts(): void {
-  window.addEventListener("message", (event) => {
-    if (event.source !== window) return;
-    if (!isPageObservation(event.data)) return;
+  // Let the MAIN world start watching. Nothing was patched before this line.
+  bridge.observe();
 
-    const observation = event.data;
+  bridge.onObservation((observation) => {
     if (observation.provider !== "leetcode") return;
     if (!isSubmissionCheckUrl(observation.url)) return;
 
@@ -162,7 +186,13 @@ function watchForVerdicts(): void {
     );
 
     void send("events:ingest", { provider: "leetcode", events: [progressEvent] })
-      .then(() => console.debug(`[lcs] ${slug}: ${check.verdict}`))
-      .catch(() => {});
+      .then((result) => {
+        // Reported rather than swallowed. The provider card already carries the reason —
+        // the background records it — but a verdict silently not landing is the kind of
+        // thing you only notice weeks later, as a review that never came due.
+        if (result.failure) console.warn(`[lcs] ${slug}: verdict not stored (${result.failure})`);
+        else console.debug(`[lcs] ${slug}: ${check.verdict}`);
+      })
+      .catch((cause: unknown) => console.warn(`[lcs] ${slug}: verdict not stored`, cause));
   });
 }

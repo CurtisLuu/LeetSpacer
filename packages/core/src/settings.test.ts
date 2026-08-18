@@ -7,6 +7,7 @@ import {
   SETTINGS_VERSION,
   type Settings,
   hasAcceptedPrivacy,
+  settingsWithoutConsent,
   withDefaults,
 } from "./settings.js";
 
@@ -376,5 +377,41 @@ describe("carrying an acceptance across revisions", () => {
     // now, so a stale stored preference must not survive the merge and mean anything.
     const stale = { privacyAcceptedVersion: 1, privacyAutoAcceptUpdates: true } as Partial<Settings>;
     expect(withDefaults(stale)).not.toHaveProperty("privacyAutoAcceptUpdates");
+  });
+});
+
+describe("settingsWithoutConsent", () => {
+  it("drops the acceptance record and nothing else", () => {
+    const accepted: Settings = {
+      ...DEFAULT_SETTINGS,
+      privacyAcceptedAt: 1_700_000_000_000,
+      privacyAcceptedVersion: 1,
+      activeTrack: "leetcode",
+    };
+
+    const stripped = settingsWithoutConsent(accepted);
+
+    expect(stripped).not.toHaveProperty("privacyAcceptedAt");
+    expect(stripped).not.toHaveProperty("privacyAcceptedVersion");
+    expect(stripped.activeTrack).toBe("leetcode");
+    expect(stripped.tracks).toEqual(accepted.tracks);
+    expect(stripped.providers).toEqual(accepted.providers);
+  });
+
+  it("merges over current settings without touching acceptance", () => {
+    // How both stores apply an import: everything from the file, consent from here.
+    const local: Settings = { ...DEFAULT_SETTINGS, privacyAcceptedAt: 1, privacyAcceptedVersion: 1 };
+    const imported: Settings = {
+      ...DEFAULT_SETTINGS,
+      privacyAcceptedAt: 999,
+      privacyAcceptedVersion: 7,
+      activeTrack: "leetcode",
+    };
+
+    const merged = withDefaults({ ...local, ...settingsWithoutConsent(imported) });
+
+    expect(merged.privacyAcceptedAt).toBe(1);
+    expect(merged.privacyAcceptedVersion).toBe(1);
+    expect(merged.activeTrack).toBe("leetcode");
   });
 });

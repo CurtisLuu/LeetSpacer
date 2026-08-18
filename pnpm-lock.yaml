@@ -22,9 +22,6 @@ importers:
       '@lcs/store':
         specifier: workspace:*
         version: link:../../packages/store
-      idb:
-        specifier: ^8.0.3
-        version: 8.0.3
       react:
         specifier: ^19.1.1
         version: 19.2.8
@@ -50,6 +47,9 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.12)
       wxt:
         specifier: ^0.21.4
         version: 0.21.4(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.4)(typescript@5.9.3)(vite@8.2.1(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12))

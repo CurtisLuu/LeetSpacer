@@ -1,4 +1,5 @@
 import {
+  type ClearedCounts,
   type ProblemState,
   type ProgressEvent,
   type ReviewCard,
@@ -6,8 +7,14 @@ import {
   type Settings,
   type Store,
   type StoreSnapshot,
+  type TrackId,
   rebuildFromLog,
+  settingsWithoutConsent,
   trackForLegacyCard,
+  validateCard,
+  validateEvent,
+  validateLog,
+  validateProblemState,
   withDefaults,
 } from "@lcs/core";
 import { type IDBPDatabase, type IDBPTransaction, type StoreNames, openDB } from "idb";
@@ -16,8 +23,48 @@ import { DB_NAME, DB_VERSION, type LcsDB, META_PREFIX, SETTINGS_KEY } from "./sc
 
 export type LcsDatabase = IDBPDatabase<LcsDB>;
 
-export function openLcsDb(name = DB_NAME): Promise<LcsDatabase> {
+/**
+ * What to do when another context needs the database at a newer version.
+ *
+ * `blocking` fires on *this* connection when another one is waiting to upgrade; holding
+ * on stalls it for ever, so the only correct move is to close and let it through.
+ * `blocked` is the other side of the same moment: this connection is the one waiting.
+ */
+export interface ConnectionEvents {
+  /** This connection was closed to let an upgrade through. The context should reload. */
+  onSuperseded?: () => void;
+  /** An upgrade here is waiting on an older connection somewhere else. */
+  onBlocked?: () => void;
+}
+
+export function openLcsDb(name = DB_NAME, events: ConnectionEvents = {}): Promise<LcsDatabase> {
   return openDB<LcsDB>(name, DB_VERSION, {
+    /**
+     * Another context is upgrading and needs this connection gone.
+     *
+     * Without this handler `versionchange` fires with nobody listening, the upgrade never
+     * starts, and its `openDB` promise never settles — so in that context `getStore()`
+     * never resolves and every message handler hangs, silently and for ever. Four
+     * contexts each open their own connection, so a version bump reaches this
+     * every time.
+     */
+    blocking(_currentVersion, _blockedVersion, event) {
+      console.info("[lcs] closing this database connection so an upgrade can run");
+      (event.target as IDBDatabase | null)?.close();
+      events.onSuperseded?.();
+    },
+    blocked() {
+      // The reverse: we are the upgrade, and something older is still holding on. It gets
+      // the `blocking` call above and closes; this is only worth saying out loud.
+      console.warn("[lcs] database upgrade waiting on another tab or panel to close");
+      events.onBlocked?.();
+    },
+    terminated() {
+      // The browser dropped the connection out from under us — a crashed backing store,
+      // or storage cleared while running. Anything holding this handle is now dead.
+      console.warn("[lcs] database connection terminated by the browser");
+      events.onSuperseded?.();
+    },
     async upgrade(db, oldVersion, _newVersion, tx) {
       if (!db.objectStoreNames.contains("events")) {
         const events = db.createObjectStore("events", { keyPath: "id" });
@@ -57,13 +104,57 @@ export function openLcsDb(name = DB_NAME): Promise<LcsDatabase> {
         db.deleteObjectStore("problems");
         createProblemStore(db);
       }
+
+      // v5: an index for the solved counts, and a repair for cards the old code could
+      // write but nothing could read.
+      const problems = tx.objectStore("problems");
+      if (!problems.indexNames.contains("providerStatus")) {
+        problems.createIndex("providerStatus", ["provider", "status"]);
+      }
+      if (oldVersion < 5) await repairUnschedulableCards(tx);
     },
   });
+}
+
+/**
+ * Give a due date back to any card that lost one.
+ *
+ * A card whose `due` is `NaN`, `Infinity` or missing has no valid key in the
+ * `[track, due]` index, so IndexedDB leaves it out of every read that goes through it:
+ * the queue, the badge, the browse list. `cards.put` now refuses to write one, but a
+ * database that already contains one would keep it invisible for ever — and seeding,
+ * which builds its "already exists" set from the same index, would re-create it on every
+ * sync. Rescheduling it to now surfaces it, keeping its review history intact.
+ */
+async function repairUnschedulableCards(
+  tx: IDBPTransaction<LcsDB, StoreNames<LcsDB>[], "versionchange">,
+): Promise<void> {
+  if (!tx.objectStoreNames.contains("cards")) return;
+
+  const cards = tx.objectStore("cards");
+  const now = Date.now();
+  let repaired = 0;
+
+  // A plain `getAll` deliberately: the broken rows are precisely the ones the index
+  // cannot see, so anything that reads through it would miss them.
+  for (const card of (await cards.getAll()) as ReviewCard[]) {
+    if (Number.isFinite(card.due)) continue;
+    await cards.put({ ...card, due: now });
+    repaired += 1;
+  }
+
+  if (repaired > 0) {
+    console.info(`[lcs] gave ${repaired} unschedulable card${repaired === 1 ? "" : "s"} a due date`);
+  }
 }
 
 function createProblemStore(db: IDBPDatabase<LcsDB>): void {
   const problems = db.createObjectStore("problems", { keyPath: ["provider", "slug"] });
   problems.createIndex("provider", "provider");
+  // Both indexes belong to a freshly created store. A new install takes the early return
+  // below and never reaches the version blocks, so an index only added there would exist
+  // on every upgraded database and on none of the new ones.
+  problems.createIndex("providerStatus", ["provider", "status"]);
 }
 
 function createCardStore(db: IDBPDatabase<LcsDB>): void {
@@ -130,11 +221,32 @@ function trackRange(track: string, until?: number): IDBKeyRange {
   return IDBKeyRange.bound([track], [track, until ?? []]);
 }
 
+/**
+ * Read, change and write settings inside one transaction.
+ *
+ * IndexedDB serializes readwrite transactions on a store across every connection, so the
+ * read and the write cannot be interleaved with another context's. That is what makes the
+ * merge in `apply` see whatever was actually stored a moment ago rather than a copy the
+ * caller read minutes earlier.
+ */
+async function writeSettings(
+  db: LcsDatabase,
+  apply: (current: Settings) => Settings,
+): Promise<Settings> {
+  const tx = db.transaction("kv", "readwrite");
+  const current = withDefaults((await tx.store.get(SETTINGS_KEY)) as Partial<Settings> | undefined);
+  const next = withDefaults(apply(current));
+  await tx.store.put(next, SETTINGS_KEY);
+  await tx.done;
+  return next;
+}
+
 export function createIdbStore(db: LcsDatabase): Store {
   const store: Store = {
     events: {
       async append(incoming) {
         if (incoming.length === 0) return [];
+        for (const event of incoming) validateEvent(event);
         const tx = db.transaction("events", "readwrite");
         const inserted: ProgressEvent[] = [];
         for (const ev of incoming) {
@@ -185,7 +297,13 @@ export function createIdbStore(db: LcsDatabase): Store {
         if (provider === undefined) return db.getAll("problems");
         return db.getAllFromIndex("problems", "provider", provider);
       },
+      async countSolved(provider) {
+        return db.countFromIndex("problems", "providerStatus", [provider, "solved"]);
+      },
       async put(states) {
+        // Checked before the transaction opens, so a bad row rejects the call instead of
+        // half-applying it.
+        for (const state of states) validateProblemState(state);
         const tx = db.transaction("problems", "readwrite");
         await Promise.all(states.map((s) => tx.store.put(s)));
         await tx.done;
@@ -218,7 +336,28 @@ export function createIdbStore(db: LcsDatabase): Store {
         if (track === undefined) return db.getAll("cards");
         return db.getAllFromIndex("cards", "trackDue", trackRange(track));
       },
+      async count(track) {
+        return db.countFromIndex("cards", "trackDue", trackRange(track));
+      },
+      async countDue(track, at) {
+        return db.countFromIndex("cards", "trackDue", trackRange(track, at));
+      },
+      async nextAfter(track, at) {
+        // Everything in this track after `at`, taking one. The lower bound is exclusive,
+        // so a card due at exactly `at` is due now rather than next.
+        const [soonest] = await db.getAllFromIndex(
+          "cards",
+          "trackDue",
+          IDBKeyRange.bound([track, at], [track, []], true, false),
+          1,
+        );
+        return soonest;
+      },
       async put(cards) {
+        // The write that has to be strict. A card whose `due` is not a finite number has
+        // no key in the `[track, due]` index, so IndexedDB accepts it and then hides it
+        // from every read the queue makes — see `validateCard`.
+        for (const card of cards) validateCard(card);
         const tx = db.transaction("cards", "readwrite");
         await Promise.all(cards.map((c) => tx.store.put(c)));
         await tx.done;
@@ -230,6 +369,7 @@ export function createIdbStore(db: LcsDatabase): Store {
 
     logs: {
       async append(logs) {
+        for (const log of logs) validateLog(log);
         const tx = db.transaction("logs", "readwrite");
         await Promise.all(logs.map((l) => tx.store.put(l)));
         await tx.done;
@@ -248,10 +388,32 @@ export function createIdbStore(db: LcsDatabase): Store {
         return withDefaults((await db.get("kv", SETTINGS_KEY)) as Partial<Settings> | undefined);
       },
       async update(patch) {
-        const current = withDefaults((await db.get("kv", SETTINGS_KEY)) as Partial<Settings> | undefined);
-        const next = withDefaults({ ...current, ...patch });
-        await db.put("kv", next, SETTINGS_KEY);
-        return next;
+        // Read and write inside one transaction. Four contexts hold their own connection
+        // to this database — the background worker, the side panel, the popup, the
+        // options page — and a read-then-write across two transactions lets the options
+        // page's save land on top of a provider update the background made in between,
+        // silently undoing it. IndexedDB serializes readwrite transactions on a store, so
+        // doing both here is what makes the update atomic rather than merely quick.
+        return writeSettings(db, (current) => ({ ...current, ...patch }));
+      },
+      async patchProvider(provider, patch) {
+        // Read inside the transaction and merged into one provider, so a write from
+        // another context in between is merged with rather than overwritten — and so a
+        // caller working from a stale copy of settings can only ever be stale about the
+        // one source it named.
+        return writeSettings(db, (current) => ({
+          ...current,
+          providers: {
+            ...current.providers,
+            [provider]: { ...current.providers[provider], ...patch },
+          },
+        }));
+      },
+      async patchTrack(track, patch) {
+        return writeSettings(db, (current) => ({
+          ...current,
+          tracks: { ...current.tracks, [track]: { ...current.tracks[track], ...patch } },
+        }));
       },
     },
 
@@ -278,13 +440,137 @@ export function createIdbStore(db: LcsDatabase): Store {
       return { version: 3, exportedAt: Date.now(), events, problems, cards, logs, settings };
     },
 
+    /**
+     * Apply a whole snapshot, or none of it.
+     *
+     * One transaction across every store, for the reason the file header gives: a
+     * half-applied import is far worse than a rejected one. The previous version ran five
+     * separate transactions in sequence, so a card that failed to write left the events
+     * and problems from the same file already committed — an account in a state that
+     * neither the file nor the machine had ever been in.
+     *
+     * Validating first is part of the same promise. `parseSnapshot` has usually done it
+     * already, but this is the seam a future sync implementation would come through too.
+     */
     async importSnapshot(snapshot: StoreSnapshot, mode) {
-      if (mode === "replace") await store.clear();
-      await store.events.append(snapshot.events);
-      await store.problems.put(snapshot.problems);
-      await store.cards.put(snapshot.cards);
-      await store.logs.append(snapshot.logs);
-      await store.settings.update(snapshot.settings);
+      for (const event of snapshot.events) validateEvent(event);
+      for (const state of snapshot.problems) validateProblemState(state);
+      for (const card of snapshot.cards) validateCard(card);
+      for (const log of snapshot.logs) validateLog(log);
+
+      const tx = db.transaction(["events", "problems", "cards", "logs", "kv"], "readwrite");
+      const events = tx.objectStore("events");
+      const problems = tx.objectStore("problems");
+      const cards = tx.objectStore("cards");
+      const logs = tx.objectStore("logs");
+      const kv = tx.objectStore("kv");
+
+      if (mode === "replace") {
+        await Promise.all([events.clear(), problems.clear(), cards.clear(), logs.clear()]);
+      }
+
+      // Events dedupe by id: an existing one is a fact we already recorded, and the
+      // stored copy is the one everything downstream was folded from.
+      for (const event of snapshot.events) {
+        if ((await events.getKey(event.id)) === undefined) await events.put(event);
+      }
+      await Promise.all([
+        ...snapshot.problems.map((state) => problems.put(state)),
+        ...snapshot.cards.map((card) => cards.put(card)),
+        ...snapshot.logs.map((log) => logs.put(log)),
+      ]);
+
+      // Settings ride along in the same transaction, minus the acceptance record, which
+      // stays whatever this install already decided — see `settingsWithoutConsent`.
+      const current = withDefaults((await kv.get(SETTINGS_KEY)) as Partial<Settings> | undefined);
+      await kv.put(
+        withDefaults({ ...current, ...settingsWithoutConsent(snapshot.settings) }),
+        SETTINGS_KEY,
+      );
+
+      await tx.done;
+    },
+
+    /**
+     * Erase one site, in a single transaction.
+     *
+     * All of it or none of it, for the same reason an import is: a "start over" that
+     * deleted the cards but left the events behind would look finished and then rebuild
+     * half the track on the next sync. Every read here is through an index scoped to the
+     * one track, so the other one is never so much as opened.
+     */
+    async clearTrack(track: TrackId): Promise<ClearedCounts> {
+      const tx = db.transaction(["events", "problems", "cards", "logs", "kv"], "readwrite");
+      const cleared = { events: 0, problems: 0, cards: 0, logs: 0 };
+
+      for (
+        let cursor = await tx.objectStore("events").index("provider").openCursor(track);
+        cursor;
+        cursor = await cursor.continue()
+      ) {
+        await cursor.delete();
+        cleared.events += 1;
+      }
+
+      for (
+        let cursor = await tx.objectStore("problems").index("provider").openCursor(track);
+        cursor;
+        cursor = await cursor.continue()
+      ) {
+        await cursor.delete();
+        cleared.problems += 1;
+      }
+
+      for (
+        let cursor = await tx
+          .objectStore("cards")
+          .index("trackDue")
+          .openCursor(trackRange(track));
+        cursor;
+        cursor = await cursor.continue()
+      ) {
+        await cursor.delete();
+        cleared.cards += 1;
+      }
+
+      // Logs have no index on `track` alone, but `[track, slug]` bounds the same way the
+      // card index does: `[track]` sorts before every `[track, …]`.
+      for (
+        let cursor = await tx
+          .objectStore("logs")
+          .index("trackSlug")
+          .openCursor(IDBKeyRange.bound([track], [track, []]));
+        cursor;
+        cursor = await cursor.continue()
+      ) {
+        await cursor.delete();
+        cleared.logs += 1;
+      }
+
+      // The cursors are rewound in the same transaction, so the deletion and the
+      // instruction to re-import can't come apart. Without it the next sync would ask for
+      // "anything since the walk that produced the history just deleted" and import
+      // nothing, leaving the track permanently empty.
+      const kv = tx.objectStore("kv");
+      const settings = withDefaults((await kv.get(SETTINGS_KEY)) as Partial<Settings> | undefined);
+      await kv.put(
+        withDefaults({
+          ...settings,
+          providers: {
+            ...settings.providers,
+            [track]: {
+              ...settings.providers[track],
+              username: null,
+              lastFullSyncAt: null,
+              lastIncrementalSyncAt: null,
+            },
+          },
+        }),
+        SETTINGS_KEY,
+      );
+
+      await tx.done;
+      return cleared;
     },
 
     async clear() {
@@ -310,13 +596,16 @@ export function createIdbStore(db: LcsDatabase): Store {
  * exactly the situation the v4 upgrade leaves behind, and it's also a general repair —
  * the log is the source of truth, so rebuilding from it can only ever be correct.
  */
-export async function createDefaultStore(name = DB_NAME): Promise<Store> {
-  const store = createIdbStore(await openLcsDb(name));
+export async function createDefaultStore(
+  name: string = DB_NAME,
+  events: ConnectionEvents = {},
+): Promise<Store> {
+  const store = createIdbStore(await openLcsDb(name, events));
 
-  const [problems, events] = await Promise.all([store.problems.all(), store.events.count()]);
-  if (problems.length === 0 && events > 0) {
+  const [problems, eventCount] = await Promise.all([store.problems.all(), store.events.count()]);
+  if (problems.length === 0 && eventCount > 0) {
     const rebuilt = await rebuildFromLog(store);
-    console.info(`[lcs] rebuilt ${rebuilt} problem states from ${events} events`);
+    console.info(`[lcs] rebuilt ${rebuilt} problem states from ${eventCount} events`);
   }
 
   return store;

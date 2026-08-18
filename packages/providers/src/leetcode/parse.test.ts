@@ -75,6 +75,21 @@ describe("toMillis", () => {
     expect(toMillis("not a time")).toBeNull();
     expect(toMillis(undefined)).toBeNull();
   });
+
+  it("rejects a value that is already in milliseconds", () => {
+    // The comment above promised both ends and only the lower one was checked. If
+    // LeetCode ever reports these in milliseconds, multiplying by a thousand puts every
+    // solve around the year 51,000 — and a card due then never comes due again, silently,
+    // for everything in the account. Dropping the row is recoverable; a fabricated date
+    // is not.
+    expect(toMillis(1_750_000_000_000)).toBeNull();
+    expect(toMillis("1750000000000")).toBeNull();
+  });
+
+  it("still accepts a submission from a few days in the future", () => {
+    // Clock skew, not a shape change. The upper bound is decades out for this reason.
+    expect(toMillis(Math.floor(Date.now() / 1000) + 3 * 86_400)).not.toBeNull();
+  });
 });
 
 describe("toVerdict", () => {
@@ -262,6 +277,10 @@ describe("the live submission poll", () => {
     expect(isSubmissionCheckUrl("/submissions/detail/1234/check/")).toBe(true);
     expect(isSubmissionCheckUrl("https://leetcode.com/graphql/")).toBe(false);
     expect(isSubmissionCheckUrl("/submissions/detail/1234/")).toBe(false);
+    // The observer uses this as its allow-list, so a path fragment on another host must
+    // never satisfy it.
+    expect(isSubmissionCheckUrl("https://evil.example/submissions/detail/1234/check/")).toBe(false);
+    expect(isSubmissionCheckUrl("http://leetcode.com/submissions/detail/1234/check/")).toBe(false);
   });
 
   it("ignores the poll's in-progress responses", () => {

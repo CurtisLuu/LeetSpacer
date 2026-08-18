@@ -28,11 +28,16 @@ export interface SeedResult {
 export async function seedMissingCards(
   store: Store,
   now: number = Date.now(),
+  only?: TrackId,
 ): Promise<SeedResult> {
   const settings = await store.settings.get();
   const seeded = { leetcode: 0, neetcode: 0 } as Record<TrackId, number>;
 
-  for (const track of TRACK_IDS) {
+  // `only` is what a sync passes: ingesting LeetCode submissions cannot have created a
+  // NeetCode card, so walking that track's problems as well is work that can only ever
+  // find nothing — on every batch of a history walk. Omitted, both are seeded, which is
+  // what a repair or a fresh import wants.
+  for (const track of only === undefined ? TRACK_IDS : [only]) {
     // A track is fed by its own provider's records and nothing else.
     const problems = await store.problems.all(track);
     seeded[track] = await seedTrack(store, settings, problems, track, now);

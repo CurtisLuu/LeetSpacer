@@ -1,8 +1,10 @@
 import {
   type ProviderId,
   type Settings,
+  TRACK_IDS,
   type TrackId,
   type TrackSettings,
+  isStorageFull,
   parseSnapshot,
 } from "@lcs/core";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -23,11 +25,34 @@ import { openWelcome } from "../../lib/pages";
 
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  /**
+   * The last thing that happened, and where to say it.
+   *
+   * `where` exists because three different sections report through this one place —
+   * rescheduling, import/export, and starting over — and a result rendered under the
+   * wrong heading reads as a different operation's outcome.
+   */
+  const [note, setNote] = useState<{
+    text: string;
+    failed: boolean;
+    where: "schedule" | "data" | "reset";
+  } | null>(null);
+
+  const say = useCallback(
+    (where: "schedule" | "data" | "reset", text: string, failed = false) =>
+      setNote({ text, failed, where }),
+    [],
+  );
   const [pasting, setPasting] = useState(false);
   const [pasted, setPasted] = useState("");
-  const [confirmingReset, setConfirmingReset] = useState(false);
+  /**
+   * Which erase is waiting for a yes: one track, everything, or nothing.
+   *
+   * One value rather than a flag per button, so arming one disarms the others — two
+   * primed "delete" buttons on screen at once is how the wrong one gets pressed.
+   */
+  const [confirming, setConfirming] = useState<TrackId | "all" | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   // Which track's schedule is being edited. Local, not persisted: it's a view of this
   // page, not a preference, and it shouldn't move the side panel's selector.
   const [editing, setEditing] = useState<TrackId>("neetcode");
@@ -36,45 +61,77 @@ export function App() {
   const rebuildSchedule = useCallback(async (track: TrackId) => {
     try {
       const { rebuilt, kept } = await send("schedule:rebuild", { track });
-      const where = `in the ${TRACK_LABELS[track]} track`;
-      setFailed(false);
-      setMessage(
+      const inTrack = `in the ${TRACK_LABELS[track]} track`;
+      say(
+        "schedule",
         kept > 0
-          ? `Rescheduled ${rebuilt} problems ${where}. ${kept} already graded, so those were left alone.`
-          : `Rescheduled ${rebuilt} problems ${where}.`,
+          ? `Rescheduled ${rebuilt} problems ${inTrack}. ${kept} already graded, so those were left alone.`
+          : `Rescheduled ${rebuilt} problems ${inTrack}.`,
       );
     } catch (error) {
-      setFailed(true);
-      setMessage(error instanceof Error ? error.message : String(error));
+      say("schedule", error instanceof Error ? error.message : String(error), true);
     }
-  }, []);
+  }, [say]);
 
   const resetData = useCallback(async () => {
     try {
       await send("data:reset", {});
-      setConfirmingReset(false);
-      setFailed(false);
-      setMessage("Everything cleared. Open either site to sync again.");
+      setConfirming(null);
+      say("reset", "Everything cleared. Open either site to sync again.");
     } catch (error) {
-      setFailed(true);
-      setMessage(`Reset failed: ${error instanceof Error ? error.message : String(error)}`);
+      say("reset", `Reset failed: ${error instanceof Error ? error.message : String(error)}`, true);
     }
-  }, []);
+  }, [say]);
+
+  /**
+   * Erase one site's data, leaving the other exactly as it is.
+   *
+   * The counts come back from the erase itself rather than being read afterwards: it is
+   * the only honest way to say what went, and "cleared" with no number reads as a button
+   * that might not have done anything.
+   */
+  const resetTrack = useCallback(async (track: TrackId) => {
+    try {
+      const { cleared } = await send("data:reset-track", { track });
+      setConfirming(null);
+      setSettings(await send("settings:get", {}));
+      say(
+        "reset",
+        `${TRACK_LABELS[track]} cleared: ${cleared.problems} problems, ${cleared.cards} review cards and ${cleared.logs} grades. ` +
+          `The ${TRACK_LABELS[other(track)]} track is untouched. Open ${HOSTS[track]} to import it again.`,
+      );
+    } catch (error) {
+      say("reset", `Reset failed: ${error instanceof Error ? error.message : String(error)}`, true);
+    }
+  }, [say]);
 
   useEffect(() => {
-    void getStore()
-      .then((store) => store.settings.get())
+    void send("settings:get", {})
       .then((loaded) => {
         setSettings(loaded);
         // Open on whatever the side panel is showing — that's the track you were just
         // looking at, and so almost always the one you came here to adjust.
         setEditing(loaded.activeTrack);
+      })
+      .catch((cause: unknown) => {
+        // Without this the page sits on "Loading…" for ever, with nothing said and
+        // nothing to press.
+        console.error("[lcs] settings unavailable", cause);
+        setLoadFailed(true);
       });
   }, []);
 
+  /**
+   * Write settings through the background rather than through this page's own connection.
+   *
+   * One writer, in one place. Both contexts hold their own handle to the same database,
+   * and this page saving a whole settings object while the background was recording a
+   * sync timestamp meant whichever wrote last silently undid the other — a source
+   * switched off here could come back on by itself. It also gets the badge repainted,
+   * which this page has no way to do.
+   */
   const patch = useCallback(async (update: Partial<Settings>) => {
-    const store = await getStore();
-    setSettings(await store.settings.update(update));
+    setSettings(await send("settings:update", { patch: update }));
   }, []);
 
   const exportData = useCallback(async () => {
@@ -100,37 +157,68 @@ export function App() {
       // The background owns the badge and has no idea we just wrote to the store.
       await send("data:changed", {}).catch(() => {});
 
-      // Counted across both tracks: an import can land in either, and reporting only the
-      // one this page happens to be showing would look like half the file went missing.
-      const cards = (await store.cards.all()).length;
-      const active = (await store.settings.get()).activeTrack;
-      const due = (await store.cards.due(active, Date.now())).length;
-      setFailed(false);
-      setMessage(
-        `Imported ${snapshot.problems.length} problems. ` +
-          `${cards} in review, ${due} due now in the ${TRACK_LABELS[active]} track.`,
+      // Reported per track rather than as one total. An import can land in either, and
+      // the two schedules are separate everywhere else — a single merged figure would be
+      // the only place in the interface that pretends otherwise.
+      const now = Date.now();
+      const summary = await Promise.all(
+        TRACK_IDS.map(async (id) => {
+          const [tracked, due] = await Promise.all([
+            store.cards.count(id),
+            store.cards.countDue(id, now),
+          ]);
+          return `${TRACK_LABELS[id]}: ${tracked} in review, ${due} due now`;
+        }),
       );
+
+      say("data", `Imported ${snapshot.problems.length} problems. ${summary.join(". ")}.`);
     } catch (error) {
-      setFailed(true);
-      setMessage(`Import failed: ${error instanceof Error ? error.message : String(error)}`);
+      say(
+        "data",
+        isStorageFull(error)
+          ? "Import failed: this browser profile is out of storage space. Free some up and try again — nothing was changed."
+          : `Import failed: ${error instanceof Error ? error.message : String(error)}`,
+        true,
+      );
     }
-  }, []);
+  }, [say]);
+
+  if (loadFailed) {
+    return (
+      <main className="mx-auto max-w-xl p-6 text-sm">
+        <Callout
+          tone="danger"
+          title="Couldn't open your settings"
+          action={
+            <Button variant="secondary" size="sm" onClick={() => location.reload()}>
+              Reload
+            </Button>
+          }
+        >
+          LeetSpacer couldn't read its own storage. Reload this page; if it keeps
+          happening, restart your browser.
+        </Callout>
+      </main>
+    );
+  }
 
   if (!settings) return <main className="p-6 text-sm">Loading…</main>;
 
   const track = settings.tracks[editing];
 
-  /** Turn one source's sync on or off, leaving the other alone. */
-  const patchProvider = (provider: ProviderId, enabled: boolean) =>
-    patch({
-      providers: { ...settings.providers, [provider]: { ...settings.providers[provider], enabled } },
-    });
+  /**
+   * Turn one source's sync on or off, leaving the other alone.
+   *
+   * Sends the one source by name. Sending the whole `providers` map meant sending this
+   * page's copy of the *other* source too — a copy read when the page opened, so a sync
+   * that finished in the meantime was quietly rolled back by an unrelated toggle.
+   */
+  const patchProvider = async (provider: ProviderId, enabled: boolean) =>
+    setSettings(await send("settings:patch-provider", { provider, patch: { enabled } }));
 
   /** Write one field of the track being edited, leaving the other track alone. */
-  const patchTrack = (update: Partial<TrackSettings>) =>
-    patch({
-      tracks: { ...settings.tracks, [editing]: { ...settings.tracks[editing], ...update } },
-    });
+  const patchTrack = async (update: Partial<TrackSettings>) =>
+    setSettings(await send("settings:patch-track", { track: editing, patch: update }));
 
   return (
     <main className="mx-auto max-w-xl space-y-6 p-6 text-sm">
@@ -338,6 +426,8 @@ export function App() {
                 </span>
               </Tooltip>
             </div>
+
+            <StatusNote note={note} where="schedule" />
           </div>
         </div>
       </Section>
@@ -398,40 +488,96 @@ export function App() {
             </div>
           ) : null}
 
-          {message ? (
-            <Callout tone={failed ? "danger" : "good"}>{message}</Callout>
-          ) : null}
+          <StatusNote note={note} where="data" />
         </div>
       </Section>
 
       <Section title="Start over">
-        <div className="space-y-2 rounded-xl border border-border bg-surface-raised p-3">
-          <p className="text-xs text-ink-muted">
-            Deletes every tracked problem, review card and grade from this browser. Your
-            settings above are kept. Open either site afterwards and your progress syncs
-            again from scratch.
-          </p>
+        <div className="space-y-3">
+          {/* One track at a time first. The two are separate everywhere else — separate
+              history, schedule and grades — so wiping one has to be possible without
+              taking the other with it. */}
+          {TRACK_IDS.map((id) => (
+            <div
+              key={id}
+              className="space-y-2 rounded-xl border border-border bg-surface-raised p-3"
+            >
+              <p className="text-xs text-ink-muted">
+                <span className="font-medium text-ink">Reset the {TRACK_LABELS[id]} track.</span>{" "}
+                Deletes what {TRACK_LABELS[id]} contributed — its problems, its review cards
+                and their grades — and nothing from{" "}
+                {TRACK_LABELS[other(id)]}. Your settings for it are kept. Open {HOSTS[id]}{" "}
+                afterwards and its history imports again from scratch.
+              </p>
 
-
-          {confirmingReset ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="danger" onClick={() => void resetData()}>
-                Yes, delete everything
-              </Button>
-              <Button variant="ghost" onClick={() => setConfirmingReset(false)}>
-                Cancel
-              </Button>
+              {confirming === id ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="danger" onClick={() => void resetTrack(id)}>
+                    Yes, clear {TRACK_LABELS[id]}
+                  </Button>
+                  <Button variant="ghost" onClick={() => setConfirming(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="secondary" onClick={() => setConfirming(id)}>
+                  Reset {TRACK_LABELS[id]} track
+                </Button>
+              )}
             </div>
-          ) : (
-            <Button variant="danger" onClick={() => setConfirmingReset(true)}>
-              Reset all data
-            </Button>
-          )}
+          ))}
+
+          <div className="space-y-2 rounded-xl border border-border bg-surface-raised p-3">
+            <p className="text-xs text-ink-muted">
+              <span className="font-medium text-ink">Reset everything.</span> Deletes every
+              tracked problem, review card and grade from this browser, from both sites.
+              Your settings above are kept.
+            </p>
+
+            {confirming === "all" ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="danger" onClick={() => void resetData()}>
+                  Yes, delete everything
+                </Button>
+                <Button variant="ghost" onClick={() => setConfirming(null)}>
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Button variant="danger" onClick={() => setConfirming("all")}>
+                Reset all data
+              </Button>
+            )}
+          </div>
+
+          <StatusNote note={note} where="reset" />
         </div>
       </Section>
     </main>
   );
 }
+
+interface Note {
+  text: string;
+  failed: boolean;
+  where: "schedule" | "data" | "reset";
+}
+
+/** Shows the last result, but only under the section that produced it. */
+function StatusNote({ note, where }: { note: Note | null; where: Note["where"] }) {
+  if (!note || note.where !== where) return null;
+  return <Callout tone={note.failed ? "danger" : "good"}>{note.text}</Callout>;
+}
+
+/** The other one. There are only ever two, which is the point. */
+function other(track: TrackId): TrackId {
+  return track === "leetcode" ? "neetcode" : "leetcode";
+}
+
+const HOSTS: Record<TrackId, string> = {
+  leetcode: "leetcode.com",
+  neetcode: "neetcode.io",
+};
 
 function RadioRow({
   name,

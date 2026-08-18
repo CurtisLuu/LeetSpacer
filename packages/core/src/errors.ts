@@ -20,6 +20,8 @@ export type SyncFailure =
   | "site-changed"
   /** The extension is missing data it ships with. Reinstalling fixes it. */
   | "not-ready"
+  /** The browser refused the write: this profile is out of storage. */
+  | "storage-full"
   /** Genuinely unclassified. Deliberately last resort. */
   | "unknown";
 
@@ -75,10 +77,37 @@ export function describeSyncFailure(failure: SyncFailure, provider: ProviderId):
         title: "LeetSpacer isn't ready",
         detail: "Some of its data is missing. Reinstalling the extension will restore it.",
       };
+    case "storage-full":
+      return {
+        title: "Out of storage space",
+        detail:
+          "Your browser refused to save more. Free up space on this profile, or export your data and reset from Settings.",
+      };
     case "unknown":
       return {
         title: `Couldn't finish syncing ${name}`,
         detail: `Open ${host} again to retry.`,
       };
   }
+}
+
+/**
+ * Is this the browser saying the profile is out of room?
+ *
+ * Duck-typed rather than `instanceof DOMException`, because this has to be recognisable
+ * from core (which knows nothing about browsers), across a `postMessage` boundary that
+ * turns any error into a plain one, and on Firefox, which uses its own name for it.
+ *
+ * Worth singling out because it is the one sync failure that retrying cannot fix: told
+ * "open leetcode.com again to retry", someone would do exactly that, for ever.
+ */
+export function isStorageFull(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return typeof error === "string" && /quota/i.test(error);
+  }
+  const { name, code, message } = error as { name?: unknown; code?: unknown; message?: unknown };
+  if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") return true;
+  // The legacy numeric codes, still set alongside the name by some engines.
+  if (code === 22 || code === 1014) return true;
+  return typeof message === "string" && /quota\s*exceeded|out of (disk )?space/i.test(message);
 }

@@ -257,3 +257,87 @@ describe("upgrading a version 1 database", () => {
     expect(after).toEqual(before);
   });
 });
+
+/**
+ * The v5 repair: a card that exists but can never be read back.
+ *
+ * IndexedDB refuses `NaN` as an index key, so a card with a non-finite `due` is skipped
+ * by every read that goes through `[track, due]` — the queue, the badge, the browse list —
+ * while `get` and export still return it. Seeding then builds its "already exists" set
+ * from the same index, sees the card missing, and re-creates it on every sync. `cards.put`
+ * refuses to write one now; this is for the databases that already have one.
+ */
+async function seedDbWithBrokenCard(name: string): Promise<string> {
+  const db = await openDB(name, 4, {
+    upgrade(database) {
+      const events = database.createObjectStore("events", { keyPath: "id" });
+      events.createIndex("observedAt", "observedAt");
+      events.createIndex("provider", "provider");
+      const problems = database.createObjectStore("problems", { keyPath: ["provider", "slug"] });
+      problems.createIndex("provider", "provider");
+      const cards = database.createObjectStore("cards", { keyPath: ["track", "slug"] });
+      cards.createIndex("trackDue", ["track", "due"]);
+      const logs = database.createObjectStore("logs", { keyPath: "id" });
+      logs.createIndex("trackSlug", ["track", "slug"]);
+      logs.createIndex("reviewedAt", "reviewedAt");
+      database.createObjectStore("kv");
+    },
+  });
+
+  await db.put("cards", { ...legacyCard("two-sum", T0 + DAY), track: "leetcode" });
+  await db.put("cards", { ...legacyCard("broken", Number.NaN), track: "leetcode" });
+  db.close();
+  return name;
+}
+
+describe("upgrading a version 4 database", () => {
+  async function upgraded() {
+    dbCounter += 1;
+    const name = await seedDbWithBrokenCard(`lcs-v5-${dbCounter}`);
+    return createIdbStore(await openLcsDb(name));
+  }
+
+  it("gives an unschedulable card a due date so it stops being invisible", async () => {
+    const store = await upgraded();
+
+    const cards = await store.cards.all("leetcode");
+    expect(cards.map((card) => card.slug).sort()).toEqual(["broken", "two-sum"]);
+    expect(Number.isFinite(cards.find((card) => card.slug === "broken")?.due)).toBe(true);
+  });
+
+  it("keeps the review history the broken card was carrying", async () => {
+    const store = await upgraded();
+    const repaired = await store.cards.get("leetcode", "broken");
+
+    // Rescheduling it is the repair; throwing away its FSRS state would be a second bug.
+    expect(repaired).toMatchObject({ stability: 4.2, reps: 5, lapses: 1, phase: "review" });
+  });
+
+  it("counts it, now that the index can see it", async () => {
+    const store = await upgraded();
+
+    expect(await store.cards.count("leetcode")).toBe(2);
+  });
+
+  it("indexes solved problems by provider and status", async () => {
+    // The v5 index has to exist over rows written before it did.
+    const store = await upgraded();
+    await store.problems.put([
+      {
+        provider: "leetcode",
+        slug: "two-sum",
+        status: "solved",
+        firstSolvedAt: T0,
+        lastSolvedAt: T0,
+        attempts: 1,
+        acceptedCount: 1,
+        hasDatedSolve: true,
+        listChecked: {},
+        updatedAt: T0,
+      },
+    ]);
+
+    expect(await store.problems.countSolved("leetcode")).toBe(1);
+    expect(await store.problems.countSolved("neetcode")).toBe(0);
+  });
+});

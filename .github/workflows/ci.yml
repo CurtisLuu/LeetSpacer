@@ -7,15 +7,23 @@ on:
     branches: [main]
   pull_request:
 
+# Nothing here writes anything back. Without this block the token inherits whatever the
+# repository default is, which is a write scope on plenty of repositories.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to commits, not tags: a tag is a moving pointer its owner can repoint, and
+      # a third-party action runs with this job's token. The trailing comment is the
+      # version, since a SHA says nothing about which one it is.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           # 22.13 is pnpm 11's floor — it reaches for node:sqlite, which Node 20 lacks.
           node-version: 22
@@ -28,3 +36,7 @@ jobs:
       # Includes the PRIVACY.md checksum guard, so a policy edit that ships without a
       # declared revision fails here as well as at `pnpm zip`.
       - run: pnpm test
+
+      # Builds too, because typecheck and tests both pass on a manifest that Chrome will
+      # refuse — nothing else in this repo reads `wxt.config.ts` at all.
+      - run: pnpm build

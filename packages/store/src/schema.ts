@@ -20,8 +20,14 @@ export const DB_NAME = "leetcode-spaced";
  * v4 split `problems` per provider: keyed on `[provider, slug]` instead of `slug`. The old
  * merged rows can't be pulled apart, so the upgrade empties the store and the extension
  * refolds it from the event log, which records a provider on every entry.
+ *
+ * v5 indexed `problems` by `[provider, status]`, so "how many has this site says you've
+ * solved" is a count rather than a full read of the account — the status surfaces poll it
+ * every couple of seconds. The same upgrade repairs any card whose `due` is not a finite
+ * number: such a card is invisible to the `[track, due]` index and so to the queue, the
+ * badge and the browse list, while still existing.
  */
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 
 /** Settings and sync cursors share one key-value store to keep the schema small. */
 export const SETTINGS_KEY = "settings";
@@ -37,7 +43,12 @@ export interface LcsDB extends DBSchema {
     /** `[provider, slug]`. */
     key: [string, string];
     value: ProblemState;
-    indexes: { provider: string };
+    /**
+     * `provider` for "everything this site knows", `providerStatus` for the counts the
+     * UI polls. Both are compound-free reads scoped to one site — nothing in the schema
+     * can address a problem without saying which site it came from.
+     */
+    indexes: { provider: string; providerStatus: [string, string] };
   };
   cards: {
     /** `[track, slug]`. */

@@ -16,7 +16,7 @@ import {
   Tooltip,
   TopicChip,
 } from "../../components/ui";
-import { formatCountdown, relativeDays } from "../../lib/format";
+import { formatCountdown, formatDueDate, relativeDays } from "../../lib/format";
 import { type ReviewItem, send } from "../../lib/messaging";
 import { openWelcome } from "../../lib/pages";
 
@@ -70,7 +70,11 @@ export function ReviewQueue({ track }: { track: TrackId }) {
         setFetched(result.items);
         setTotalDue(result.totalDue);
         setScheduledAhead(result.scheduledAhead);
-        setDailyLimit(result.limit);
+        // The setting, not what this request asked for. Adopting `limit` here is what
+        // made every "load more" the new daily limit — and so the new step size, which
+        // doubled on every press — while quietly rewriting the "reviewed today"
+        // denominator and the tooltip that explains where the number comes from.
+        setDailyLimit(result.dailyLimit);
         setNextDueAt(result.nextDueAt);
         setReviewedToday(result.reviewedToday);
         setError(null);
@@ -85,8 +89,8 @@ export function ReviewQueue({ track }: { track: TrackId }) {
         }
         return result;
       } catch (cause) {
-        console.warn("[lcs] grade failed", cause);
-        setError("grade");
+        console.warn("[lcs] loading today's queue failed", cause);
+        setError("load");
         return null;
       }
     },
@@ -96,7 +100,7 @@ export function ReviewQueue({ track }: { track: TrackId }) {
   useEffect(() => {
     let cancelled = false;
     void load(true).then((result) => {
-      if (!cancelled && result) requested.current = result.limit;
+      if (!cancelled && result) requested.current = result.dailyLimit;
     });
 
     // Data can arrive from elsewhere — a sync on neetcode.io, or an import on the
@@ -350,12 +354,4 @@ export function ReviewQueue({ track }: { track: TrackId }) {
       </ul>
     </Section>
   );
-}
-
-/** "tomorrow" / "Thu" / "18 Aug" — whichever is shortest and still unambiguous. */
-function formatDueDate(at: number): string {
-  const days = Math.ceil((at - Date.now()) / 86_400_000);
-  if (days <= 1) return "tomorrow";
-  if (days < 7) return new Date(at).toLocaleDateString(undefined, { weekday: "long" });
-  return new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }

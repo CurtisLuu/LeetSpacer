@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "node scripts/sync-catalog.mjs && wxt",
     "build": "node scripts/sync-catalog.mjs && wxt build",
+    "test": "vitest run",
     "zip": "node scripts/sync-catalog.mjs && wxt zip",
     "postinstall": "wxt prepare",
     "typecheck": "node scripts/sync-catalog.mjs && wxt prepare && tsc --noEmit",
@@ -17,7 +18,6 @@
     "@lcs/core": "workspace:*",
     "@lcs/providers": "workspace:*",
     "@lcs/store": "workspace:*",
-    "idb": "^8.0.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
@@ -28,6 +28,7 @@
     "@wxt-dev/module-react": "^1.1.3",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
     "wxt": "^0.21.4"
   }
 }

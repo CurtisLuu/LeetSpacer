@@ -69,6 +69,8 @@ export interface RoadmapTopic {
 
 export type ProblemStatus = "todo" | "attempted" | "solved";
 
+export const PROBLEM_STATUSES: readonly ProblemStatus[] = ["todo", "attempted", "solved"];
+
 /**
  * Everything one provider knows about one user's relationship to one problem.
  * This is a *projection* of the event log, never edited directly by adapters.
@@ -136,7 +138,11 @@ export const Rating = {
 
 export type ReviewRating = (typeof Rating)[keyof typeof Rating];
 
+export const RATINGS: readonly ReviewRating[] = [Rating.Again, Rating.Hard, Rating.Good, Rating.Easy];
+
 export type CardPhase = "new" | "learning" | "review" | "relearning";
+
+export const CARD_PHASES: readonly CardPhase[] = ["new", "learning", "review", "relearning"];
 
 /**
  * FSRS scheduling state for a solved problem. Only solved problems get cards.

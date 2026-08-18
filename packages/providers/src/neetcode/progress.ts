@@ -8,8 +8,9 @@
  *   - `localStorage["synced-progress-cache"]` holds `{"completed": {"<Topic>": [...]}}`
  *
  * Both are read passively — the page requests the first one itself on load, and the
- * second is just sitting there. The extension issues no requests of its own and never
- * touches an auth token.
+ * second is just sitting there. This surface costs no request of our own and needs no
+ * token. (The activity walk in `activity.ts` is the one that does; see it and
+ * `PRIVACY.md` § Credentials.)
  *
  * The important property is that problems are identified by **LeetCode URL**. That makes
  * NeetCode's own slugs (`is-anagram`, `three-integer-sum`) irrelevant and lets everything
@@ -93,3 +94,38 @@ export function isCompletedProblemsCall(requestBody: string): boolean {
 }
 
 export const PROGRESS_CACHE_KEY = "synced-progress-cache";
+
+/**
+ * The one URL the MAIN-world observer is allowed to look at.
+ *
+ * Everything the NeetCode adapter needs — the completed set, and the bearer token the
+ * activity walk borrows — rides on this single same-origin path. The filter is written as
+ * an allow-list of exactly it, and parsed rather than pattern-matched, because the earlier
+ * substring filter (`/firestore|googleapis|firebaseio|\/api\/|graphql/`) matched
+ * `identitytoolkit.googleapis.com/v1/accounts:signInWithPassword` and
+ * `securetoken.googleapis.com/v1/token` — so signing in put an email, a plaintext password
+ * and a refresh token through the observer. Nothing here may ever match a host other than
+ * neetcode.io's own.
+ */
+const CALLABLE_PATH = "/api/callablefunctionhttp";
+
+/** Hosts the observer may read. Anything else — Google's auth endpoints above, most of all. */
+const OBSERVABLE_HOSTS = new Set(["neetcode.io", "www.neetcode.io"]);
+
+/**
+ * Is this a request the NeetCode observer may relay?
+ *
+ * `base` resolves the relative URLs the page uses for its own calls; it is the observing
+ * page's origin, so a relative URL is same-origin by construction.
+ */
+export function isObservableNeetcodeUrl(url: string, base = "https://neetcode.io"): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url, base);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  if (!OBSERVABLE_HOSTS.has(parsed.hostname.toLowerCase())) return false;
+  return parsed.pathname.toLowerCase().replace(/\/+$/, "") === CALLABLE_PATH;
+}

@@ -10,7 +10,9 @@ export function App() {
   const active = track ?? "neetcode";
   const stats = status?.tracks?.[active];
   // The provider behind this track is the one whose tab has to be open for it to sync.
-  const connected = status?.providers.find((p) => p.provider === active)?.connected ?? false;
+  const source = status?.providers.find((p) => p.provider === active);
+  const connected = source?.connected ?? false;
+  const off = source !== undefined && !source.enabled;
 
   return (
     <div className="w-64 space-y-3 p-3 text-sm">
@@ -21,14 +23,16 @@ export function App() {
         </span>
         <Tooltip
           label={
-            connected
-              ? `A ${TRACK_LABELS[active]} tab is open, so progress syncs as you browse`
-              : `Open ${active === "leetcode" ? "leetcode.com" : "neetcode.io/practice"} to sync`
+            off
+              ? `${TRACK_LABELS[active]} is switched off in Settings, so nothing is read from it`
+              : connected
+                ? `A ${TRACK_LABELS[active]} tab checked in recently, so progress syncs as you browse`
+                : `Open ${active === "leetcode" ? "leetcode.com" : "neetcode.io/practice"} to sync`
           }
           align="end"
         >
-          <Badge tone={connected ? "good" : "neutral"} dot>
-            {connected ? "syncing" : "not connected"}
+          <Badge tone={off ? "warn" : connected ? "good" : "neutral"} dot>
+            {off ? "off" : connected ? "syncing" : "not connected"}
           </Badge>
         </Tooltip>
       </div>

@@ -2,14 +2,14 @@ import {
   type ProviderId,
   type ReviewCard,
   type Settings,
-  type Store,
   type SyncFailure,
   type TrackId,
   TRACK_IDS,
   createScheduler,
-  distributeDueDates,
   hasAcceptedPrivacy,
   ingestEvents,
+  isStorageFull,
+  rebuildTrackSchedule,
   seedMissingCards,
   withMinimumLock,
 } from "@lcs/core";
@@ -33,9 +33,54 @@ const MS_PER_DAY = 86_400_000;
  */
 const INCREMENTAL_INTERVAL_MS = 15 * 60 * 1000;
 
-/** Which provider tabs have checked in this browser session. */
-const connected = new Set<ProviderId>();
-const lastFailure = new Map<ProviderId, SyncFailure>();
+/**
+ * How recently a tab on each site checked in, and how the last sync ended.
+ *
+ * Persisted rather than held in module state. MV3 evicts this worker after about thirty
+ * seconds idle, and the previous in-memory `Set` went with it — so the popup said "not
+ * connected" and the provider card said "no tab open" while a leetcode.com tab sat there
+ * syncing, and the explanation for a real failure vanished on the next poll.
+ *
+ * Only ever written after consent: a greeting that arrives before the policy is accepted
+ * must leave nothing behind, timestamps included.
+ */
+const LAST_SEEN_KEY = (provider: ProviderId) => `provider:${provider}:lastSeenAt`;
+const LAST_FAILURE_KEY = (provider: ProviderId) => `provider:${provider}:lastFailure`;
+
+/**
+ * How long a check-in still counts as "connected".
+ *
+ * A content script greets on page load and again on every batch it ingests, so an active
+ * sync keeps refreshing this. Nothing reports a tab *closing*, so past this window the
+ * honest answer is that we no longer know — and the advice that follows from it, "open
+ * the site", is right either way.
+ */
+const CONNECTED_WINDOW_MS = 5 * 60 * 1000;
+
+async function noteSeen(provider: ProviderId): Promise<void> {
+  await (await getStore()).meta.set(LAST_SEEN_KEY(provider), Date.now());
+}
+
+async function noteFailure(provider: ProviderId, failure: SyncFailure | null): Promise<void> {
+  const store = await getStore();
+  if (failure === null) await store.meta.remove(LAST_FAILURE_KEY(provider));
+  else await store.meta.set(LAST_FAILURE_KEY(provider), failure);
+}
+
+/**
+ * Clear a stale failure when a tab checks in — except one.
+ *
+ * Opening the site again is evidence that a signed-out or unreachable state may be over.
+ * It is no evidence at all about a full profile, so `storage-full` stays until a sync
+ * actually completes; clearing it on a page load would make the one failure that needs
+ * acting on flicker away and come back.
+ */
+async function clearRecoverableFailure(provider: ProviderId): Promise<void> {
+  const store = await getStore();
+  const failure = await store.meta.get<SyncFailure>(LAST_FAILURE_KEY(provider));
+  if (failure === undefined || failure === "storage-full") return;
+  await store.meta.remove(LAST_FAILURE_KEY(provider));
+}
 
 /**
  * Providers with a sync in flight, so a second tab doesn't duplicate the work.
@@ -56,10 +101,10 @@ const syncing = new Set<ProviderId>();
 const lastAttemptAt = new Map<ProviderId, number>();
 
 export default defineBackground(() => {
-  // Clicking the toolbar icon opens the side panel, which is the main UI.
-  browser.sidePanel
-    ?.setPanelBehavior({ openPanelOnActionClick: true })
-    .catch((error: unknown) => console.error("[lcs] side panel behavior", error));
+  // No `setPanelBehavior({ openPanelOnActionClick: true })` here. There is a popup
+  // entrypoint, so the manifest carries `action.default_popup`, and the popup always wins
+  // the toolbar click — the call was inert and its comment claimed otherwise. The popup
+  // opens the side panel itself.
 
   // Open the walkthrough once, on install only.
   //
@@ -86,39 +131,67 @@ export default defineBackground(() => {
 
   onMessage({
     "provider:hello": async ({ provider, username }) => {
-      connected.add(provider);
-      lastFailure.delete(provider);
-      if (username) await patchProvider(provider, { username });
-
       const settings = await (await getStore()).settings.get();
-      return { ack: true, consented: hasAcceptedPrivacy(settings) };
+      const consented = hasAcceptedPrivacy(settings);
+      const enabled = settings.providers[provider].enabled;
+
+      // Nothing at all is recorded before the two gates — not the username, and not the
+      // fact that a tab said hello. A greeting that arrives before acceptance must leave
+      // no trace of any kind.
+      if (consented && enabled) {
+        await noteSeen(provider);
+        await clearRecoverableFailure(provider);
+        if (username) await patchProvider(provider, { username });
+      }
+
+      return { ack: true, consented, enabled };
     },
 
     "events:ingest": async ({ provider, events, complete }) => {
-      connected.add(provider);
       const store = await getStore();
+      const settings = await store.settings.get();
+      const ignored = { received: events.length, inserted: 0, updatedProblems: [] };
 
       // The last line of defence: nothing is written before consent, whatever sent it.
-      if (!hasAcceptedPrivacy(await store.settings.get())) {
-        return { received: events.length, inserted: 0, updatedProblems: [] };
+      if (!hasAcceptedPrivacy(settings)) return ignored;
+
+      // Nor from a source that has been switched off. The content scripts stand down on
+      // their own, but a tab that was already open when the switch was flipped is still
+      // running the old answer — and "stops it being read" has to mean it.
+      if (!settings.providers[provider].enabled) return ignored;
+
+      await noteSeen(provider);
+
+      try {
+        const result = await ingestEvents(store, events);
+
+        if (result.inserted > 0) {
+          // Only this provider's track: its own events cannot have created a card in the
+          // other one.
+          await seedMissingCards(store, Date.now(), provider);
+          const now = Date.now();
+          await patchProvider(provider, {
+            lastIncrementalSyncAt: now,
+            // Only a batch that *is* the whole set proves a full sync happened. LeetCode
+            // pages its history, so an early page saying "full sync done" would strand the
+            // rest of it if the tab closed.
+            ...(complete ? { lastFullSyncAt: now } : {}),
+          });
+          await refreshBadge();
+        }
+
+        return result;
+      } catch (cause) {
+        // A full profile is not a failed sync to be retried, and it is the one cause that
+        // reaches here as a write error rather than as a `SyncError` from an adapter.
+        // Reported in the response so the walk stops, and recorded so the provider card
+        // explains it — a rejection here would cross the message boundary as a plain
+        // Error and be classified "unknown", which advises reopening the site for ever.
+        if (!isStorageFull(cause)) throw cause;
+        console.error("[lcs] storage full while ingesting", cause);
+        await noteFailure(provider, "storage-full");
+        return { ...ignored, failure: "storage-full" as const };
       }
-
-      const result = await ingestEvents(store, events);
-
-      if (result.inserted > 0) {
-        await seedMissingCards(store);
-        const now = Date.now();
-        await patchProvider(provider, {
-          lastIncrementalSyncAt: now,
-          // Only a batch that *is* the whole set proves a full sync happened. LeetCode
-          // pages its history, so an early page saying "full sync done" would strand the
-          // rest of it if the tab closed.
-          ...(complete ? { lastFullSyncAt: now } : {}),
-        });
-        await refreshBadge();
-      }
-
-      return result;
     },
 
     "sync:status": async () => buildStatus(),
@@ -159,9 +232,9 @@ export default defineBackground(() => {
       const now = Date.now();
 
       if (failure) {
-        lastFailure.set(provider, failure);
+        await noteFailure(provider, failure);
       } else {
-        lastFailure.delete(provider);
+        await noteFailure(provider, null);
         await patchProvider(provider, {
           lastIncrementalSyncAt: now,
           ...(mode === "full" ? { lastFullSyncAt: now } : {}),
@@ -187,34 +260,40 @@ export default defineBackground(() => {
       const midnight = new Date();
       midnight.setHours(0, 0, 0, 0);
 
-      const [settings, allDue, allCards, todaysLogs] = await Promise.all([
-        store.settings.get(),
-        store.cards.due(track, now),
-        store.cards.all(track),
+      const settings = await store.settings.get();
+      const dailyLimit = settings.tracks[track].dailyReviewLimit;
+      const cap = limit ?? dailyLimit;
+
+      // Counted and range-read through the `[track, due]` index rather than loaded and
+      // filtered. This handler is polled every few seconds by an open panel, and reading
+      // every card in the track to work out two integers kept the worker awake and
+      // deserializing thousands of rows a minute on a full history.
+      const [totalDue, tracked, selected, next, todaysLogs] = await Promise.all([
+        store.cards.countDue(track, now),
+        store.cards.count(track),
+        // Already sorted soonest-first by the index, so the most overdue come first —
+        // those are the ones closest to being forgotten.
+        store.cards.due(track, now, cap),
+        store.cards.nextAfter(track, now),
         store.logs.since(midnight.getTime()),
       ]);
-
-      // Everything seeded but not yet due. Mostly the dateless backfill, which the
-      // seeding strategy deliberately fans across a window instead of dumping at once.
-      const waiting = allCards.filter((card) => card.due > now);
-      const nextDueAt = waiting.reduce<number | null>(
-        (soonest, card) => (soonest === null ? card.due : Math.min(soonest, card.due)),
-        null,
-      );
-
-      const cap = limit ?? settings.tracks[track].dailyReviewLimit;
-      // Most overdue first — those are the ones closest to being forgotten.
-      const selected = [...allDue].sort((a, b) => a.due - b.due).slice(0, cap);
 
       const items = await toReviewItems(selected, track, settings.problemLinkTarget, now);
 
       return {
         items,
-        totalDue: allDue.length,
+        totalDue,
+        // What this response was capped at, which is not necessarily the setting: a
+        // "load more" asks for a bigger batch. Reporting the two separately is the fix
+        // for a panel that adopted each request as the new daily limit and then doubled
+        // it on every press.
         limit: cap,
+        dailyLimit,
         track,
-        scheduledAhead: waiting.length,
-        nextDueAt,
+        // Everything seeded but not yet due. Mostly the dateless backfill, which the
+        // seeding strategy deliberately fans across a window instead of dumping at once.
+        scheduledAhead: Math.max(0, tracked - totalDue),
+        nextDueAt: next?.due ?? null,
         reviewedToday: todaysLogs.filter((log) => log.track === track).length,
       };
     },
@@ -255,13 +334,44 @@ export default defineBackground(() => {
       return { ok: true } as const;
     },
 
+    "data:reset-track": async ({ track }) => {
+      const store = await getStore();
+      const cleared = await store.clearTrack(track);
+
+      // The check-in and failure notes describe a history that no longer exists.
+      await store.meta.remove(LAST_SEEN_KEY(track));
+      await store.meta.remove(LAST_FAILURE_KEY(track));
+      // A sync claimed by a tab that is still open would otherwise write the old history
+      // straight back; releasing it lets the next page load start a fresh full walk.
+      syncing.delete(track);
+      lastAttemptAt.delete(track);
+
+      await refreshBadge();
+      return { cleared };
+    },
+
     "schedule:rebuild": async ({ track }) => {
-      const result = await rebuildSchedule(await getStore(), track);
+      // The rescheduler lives in core, where it can be tested against a store: it is the
+      // one operation that rewrites due dates in bulk, and the version that lived here
+      // read every problem row from *both* sites and keyed them by slug alone.
+      const result = await rebuildTrackSchedule(await getStore(), track);
       await refreshBadge();
       return result;
     },
 
     "settings:get": async () => (await getStore()).settings.get(),
+
+    "settings:patch-provider": async ({ provider, patch }) => {
+      const next = await (await getStore()).settings.patchProvider(provider, patch);
+      await refreshBadge();
+      return next;
+    },
+
+    "settings:patch-track": async ({ track, patch }) => {
+      const next = await (await getStore()).settings.patchTrack(track, patch);
+      await refreshBadge();
+      return next;
+    },
 
     "settings:update": async ({ patch }) => {
       const next = await (await getStore()).settings.update(patch);
@@ -342,71 +452,18 @@ async function toReviewItems(
   });
 }
 
-/** Update one provider's settings without disturbing the other's. */
+/**
+ * Update one provider's settings without disturbing the other's.
+ *
+ * A one-line wrapper now that the store takes the provider by name. It used to read every
+ * provider's settings and write them all back, which meant a sync timestamp landing here
+ * could revive a source the user had just switched off on the options page.
+ */
 async function patchProvider(
   provider: ProviderId,
   patch: Partial<Settings["providers"][ProviderId]>,
 ): Promise<void> {
-  const store = await getStore();
-  const { providers } = await store.settings.get();
-  await store.settings.update({
-    providers: { ...providers, [provider]: { ...providers[provider], ...patch } },
-  });
-}
-
-/**
- * Re-seed one track's schedule using its current settings.
- *
- * Scoped to a track because the settings being applied are: rebuilding the NeetCode track
- * has no business moving cards you've been working through on LeetCode.
- *
- * Only touches cards you've never graded — anything with review history is real data and
- * is left exactly where it is. Cards with a genuine solve date are re-seeded from it but
- * kept out of the redistribution, for the same reason seeding skips them.
- */
-async function rebuildSchedule(
-  store: Store,
-  track: TrackId,
-): Promise<{ rebuilt: number; kept: number }> {
-  const settings = await store.settings.get();
-  const tuning = settings.tracks[track];
-  const scheduler = createScheduler({ requestRetention: tuning.requestRetention });
-  const [cards, problems] = await Promise.all([store.cards.all(track), store.problems.all()]);
-  const bySlug = new Map(problems.map((problem) => [problem.slug, problem]));
-
-  const dated: ReviewCard[] = [];
-  const undated: ReviewCard[] = [];
-  let kept = 0;
-
-  for (const card of cards) {
-    const reviewed = await store.logs.forProblem(track, card.slug);
-    if (reviewed.length > 0) {
-      kept += 1;
-      continue;
-    }
-    const problem = bySlug.get(card.slug);
-    if (!problem?.lastSolvedAt) continue;
-    const seeded = scheduler.seed(
-      track,
-      card.slug,
-      problem.lastSolvedAt,
-      Math.max(1, problem.attempts),
-    );
-    (problem.hasDatedSolve ? dated : undated).push(seeded);
-  }
-
-  if (dated.length > 0 || undated.length > 0) {
-    await store.cards.put([
-      ...dated,
-      ...distributeDueDates(undated, {
-        strategy: tuning.seedStrategy,
-        now: Date.now(),
-        spreadDays: tuning.seedSpreadDays,
-      }),
-    ]);
-  }
-
-  return { rebuilt: dated.length + undated.length, kept };
+  await (await getStore()).settings.patchProvider(provider, patch);
 }
 
 /** Fetched from static assets on first use, not bundled — see lib/catalog.ts. */
@@ -420,54 +477,74 @@ async function getCatalogStats(): Promise<{ count: number; generatedAt: string |
   }
 }
 
+/**
+ * The status every surface polls, memoised for a moment.
+ *
+ * Three surfaces poll this — the popup every two seconds, the side panel every five, the
+ * options page on open — and they overlap constantly. The window is short enough that
+ * nothing visibly lags and any write clears it outright, via `refreshBadge`.
+ */
+let statusCache: { at: number; value: SyncStatus } | null = null;
+const STATUS_TTL_MS = 1_000;
+
+function invalidateStatus(): void {
+  statusCache = null;
+}
+
 async function buildStatus(): Promise<SyncStatus> {
+  const cached = statusCache;
+  if (cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.value;
+
   const store = await getStore();
   const now = Date.now();
   const [settings, catalog] = await Promise.all([store.settings.get(), getCatalogStats()]);
 
-  const providers: ProviderStatus[] = ACTIVE_PROVIDERS.map((id) => ({
-    provider: id,
-    connected: connected.has(id),
-    username: settings.providers[id].username,
-    lastFullSyncAt: settings.providers[id].lastFullSyncAt,
-    lastIncrementalSyncAt: settings.providers[id].lastIncrementalSyncAt,
-    lastFailure: lastFailure.get(id) ?? null,
-  }));
+  const providers: ProviderStatus[] = await Promise.all(
+    ACTIVE_PROVIDERS.map(async (id) => {
+      const [lastSeenAt, lastFailure] = await Promise.all([
+        store.meta.get<number>(LAST_SEEN_KEY(id)),
+        store.meta.get<SyncFailure>(LAST_FAILURE_KEY(id)),
+      ]);
+      return {
+        provider: id,
+        // Derived from a timestamp that survives the worker being evicted, rather than
+        // from a Set that did not.
+        connected: lastSeenAt !== undefined && now - lastSeenAt < CONNECTED_WINDOW_MS,
+        lastSeenAt: lastSeenAt ?? null,
+        username: settings.providers[id].username,
+        enabled: settings.providers[id].enabled,
+        lastFullSyncAt: settings.providers[id].lastFullSyncAt,
+        lastIncrementalSyncAt: settings.providers[id].lastIncrementalSyncAt,
+        lastFailure: lastFailure ?? null,
+      };
+    }),
+  );
 
-  // Reported for every track, not just the active one, so the selector can show what's
-  // waiting in the track you're not looking at.
+  // Every number here is scoped to one track and counted through an index. There is no
+  // total spanning both: the two sites are two schedules, and a figure sitting between
+  // them belongs to neither — which is also why nothing in the interface asked for one.
   const tracks = {} as SyncStatus["tracks"];
-  let tracked = 0;
-  let solved = 0;
-  for (const track of TRACK_IDS) {
-    const [cards, due, events, problems] = await Promise.all([
-      store.cards.all(track),
-      store.cards.due(track, now),
-      // Scoped to the provider that feeds this track. A combined total sitting between
-      // two track-scoped numbers reads as a bug, because it looks like one of the three
-      // is counting something else — which it was.
-      store.events.count(track),
-      store.problems.all(track),
-    ]);
-    tracked += problems.length;
-    solved += problems.filter((p) => p.status === "solved").length;
-    tracks[track] = {
-      tracked: cards.length,
-      solved: problems.filter((p) => p.status === "solved").length,
-      due: due.length,
-      events,
-    };
-  }
+  await Promise.all(
+    TRACK_IDS.map(async (track) => {
+      const [tracked, due, events, solved] = await Promise.all([
+        store.cards.count(track),
+        store.cards.countDue(track, now),
+        store.events.count(track),
+        store.problems.countSolved(track),
+      ]);
+      tracks[track] = { tracked, solved, due, events };
+    }),
+  );
 
-  return {
+  const value: SyncStatus = {
     running: false,
     providers,
     tracks,
     activeTrack: settings.activeTrack,
-    problemsTracked: tracked,
-    solved,
     catalog,
   };
+  statusCache = { at: Date.now(), value };
+  return value;
 }
 
 /**
@@ -478,11 +555,15 @@ async function buildStatus(): Promise<SyncStatus> {
  * aren't in the one you're working.
  */
 async function refreshBadge(): Promise<void> {
+  // Every write path calls this, so it is also where the status memo is dropped.
+  invalidateStatus();
   try {
     const store = await getStore();
     const { activeTrack } = await store.settings.get();
-    const due = await store.cards.due(activeTrack, Date.now());
-    const text = due.length === 0 ? "" : String(Math.min(due.length, 99));
+    const due = await store.cards.countDue(activeTrack, Date.now());
+    // "99+" rather than a flat "99": a backlog of 400 that reads as 99 looks like the
+    // count is stuck, and the badge is four characters wide for exactly this.
+    const text = due === 0 ? "" : due > 99 ? "99+" : String(due);
     await browser.action.setBadgeText({ text });
     await browser.action.setBadgeBackgroundColor({ color: "#7c3aed" });
   } catch (error) {
