@@ -2,12 +2,6 @@
 
 What changed in each released version of LeetSpacer.
 
-This file exists because the Chrome Web Store has nowhere to put it. The store shows a
-version number and an "Updated" date on the listing and nothing else — no release notes
-field in the dashboard, no per-version history page. So this is the record, along with the
-short WHAT'S NEW block at the top of the listing description (see
-[`docs/store-listing.md`](docs/store-listing.md)).
-
 Versions follow the `version` in `apps/extension/package.json`, which is what WXT writes
 into the manifest and what the store displays.
 
