@@ -126,7 +126,7 @@ export function App() {
           n={2}
           title="Pick where to start"
           done={anySynced}
-          body="Both sites are supported, with one difference between them. Switch tracks any time from the top of the side panel."
+          body="Both sites are supported and keep separate schedules. Switch tracks any time from the top of the side panel."
         >
           <TrackSwitcher value={track ?? "neetcode"} onChange={setTrack} disabled={track === null} />
 
@@ -185,6 +185,12 @@ export function App() {
           >
             Open the side panel
           </Button>
+
+          <p className="mt-3 text-xs text-ink-subtle">
+            The queue hands you a fixed batch for the day rather than refilling as you work
+            through it. <strong className="font-medium">Browse all</strong>, on the track
+            panel, lists everything else with a countdown to when each one unlocks.
+          </p>
         </Step>
       </ol>
 
