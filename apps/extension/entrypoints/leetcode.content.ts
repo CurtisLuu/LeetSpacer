@@ -3,10 +3,8 @@ import {
   type SyncCtx,
   checkToEvent,
   createThrottle,
-  detectAuth,
-  fullSync,
-  incrementalSync,
   isSubmissionCheckUrl,
+  leetcodeSync,
   parseSubmissionCheck,
   slugFromProblemUrl,
   submissionIdFromCheckUrl,
@@ -47,7 +45,7 @@ export default defineContentScript({
     // submission landing while a slow sync is still running shouldn't be missed.
     watchForVerdicts();
 
-    const auth = await detectAuth(transport);
+    const auth = await leetcodeSync.detectAuth(transport);
     await send("provider:hello", {
       provider: "leetcode",
       url: location.href,
@@ -68,7 +66,10 @@ async function syncIfClaimed(
   signal: AbortSignal,
 ): Promise<void> {
   const claim = await send("sync:claim", { provider: "leetcode" }).catch(() => null);
-  if (!claim?.mode) return;
+  if (!claim?.mode) {
+    console.info(`[lcs] leetcode: no sync this load (${claim?.reason ?? "unreachable"})`);
+    return;
+  }
 
   const mode: SyncMode = claim.mode;
   const syncCtx: SyncCtx = {
@@ -88,8 +89,8 @@ async function syncIfClaimed(
   try {
     const stream =
       mode === "full"
-        ? fullSync(transport, syncCtx)
-        : incrementalSync(transport, syncCtx, claim.since);
+        ? leetcodeSync.fullSync(transport, syncCtx)
+        : leetcodeSync.incrementalSync(transport, syncCtx, claim.since);
 
     // Persisted batch by batch, not at the end: a full history walk takes minutes, and
     // losing all of it because the tab closed at minute nine would be its own bug.
@@ -101,8 +102,8 @@ async function syncIfClaimed(
     }
 
     await send("sync:completed", { provider: "leetcode", mode });
-    console.debug(
-      `[lcs] leetcode ${mode} sync: ${inserted} new events across ${touched.size} problems`,
+    console.info(
+      `[lcs] leetcode ${mode} sync done: ${inserted} new events across ${touched.size} problems`,
     );
   } catch (cause) {
     const error = cause instanceof Error ? cause.message : String(cause);

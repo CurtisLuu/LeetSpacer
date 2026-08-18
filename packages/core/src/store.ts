@@ -35,12 +35,20 @@ export interface EventStore {
   remove(ids: readonly string[]): Promise<number>;
 }
 
+/**
+ * Problem state, addressed by `(provider, slug)`.
+ *
+ * Scoped to a provider for the same reason cards are scoped to a track: the two sites
+ * record different things about the same problem, and a single merged row belonged to
+ * neither of them.
+ */
 export interface ProblemStateStore {
-  get(slug: string): Promise<ProblemState | undefined>;
-  getMany(slugs: readonly string[]): Promise<ProblemState[]>;
-  all(): Promise<ProblemState[]>;
+  get(provider: ProviderId, slug: string): Promise<ProblemState | undefined>;
+  getMany(provider: ProviderId, slugs: readonly string[]): Promise<ProblemState[]>;
+  /** Every state for one provider, or across all of them when omitted. */
+  all(provider?: ProviderId): Promise<ProblemState[]>;
   put(states: readonly ProblemState[]): Promise<void>;
-  remove(slugs: readonly string[]): Promise<number>;
+  remove(provider: ProviderId, slugs: readonly string[]): Promise<number>;
 }
 
 /**
@@ -81,11 +89,12 @@ export interface MetaStore {
 /**
  * Full local state. Doubles as the export format and the future sync payload.
  *
- * Version 2 added `track` to cards and logs. `parseSnapshot` still accepts a version 1
- * file and migrates it, so old backups keep working.
+ * Version 2 added `track` to cards and logs; version 3 split problem state per provider.
+ * `parseSnapshot` accepts either older version and migrates it, so old backups keep
+ * working.
  */
 export interface StoreSnapshot {
-  version: 2;
+  version: 3;
   exportedAt: Timestamp;
   events: ProgressEvent[];
   problems: ProblemState[];

@@ -19,7 +19,7 @@ import {
 } from "../../components/ui";
 import { send } from "../../lib/messaging";
 import { getStore } from "../../lib/store";
-import { openWelcome } from "../../lib/welcome";
+import { openWelcome } from "../../lib/pages";
 
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -268,6 +268,32 @@ export function App() {
                 Higher means more frequent reviews.
               </span>
             </label>
+          </div>
+
+          <div className="space-y-2 border-t border-border pt-3">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-ink">
+              Minimum lock, in days
+              <InfoDot label="The soonest a problem can come back after you rate it. FSRS thinks in flashcards, where ten minutes later is useful; a coding problem re-solved that soon measures nothing. Anything longer than this is left to FSRS." />
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {(["Easy", "Medium", "Hard"] as const).map((level) => (
+                <NumberField
+                  key={level}
+                  label={level}
+                  value={track.minimumLockDays[level]}
+                  min={0}
+                  max={60}
+                  onChange={(days) =>
+                    void patchTrack({
+                      minimumLockDays: { ...track.minimumLockDays, [level]: days },
+                    })
+                  }
+                />
+              ))}
+            </div>
+            <p className="text-xs text-ink-subtle">
+              Set to 0 to let FSRS schedule freely.
+            </p>
           </div>
 
           <div className="space-y-3 border-t border-border pt-3">

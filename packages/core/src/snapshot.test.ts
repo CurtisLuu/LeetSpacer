@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { createMemoryStore } from "./memory-store.js";
-import type { ProblemState } from "./model.js";
+import type { ProviderId } from "./model.js";
 import { parseSnapshot } from "./snapshot.js";
 
 const VALID = {
-  version: 2,
+  version: 3,
   exportedAt: 1_786_929_717_000,
   events: [],
   problems: [],
@@ -16,7 +16,7 @@ const VALID = {
 
 describe("parseSnapshot", () => {
   it("accepts a well-formed snapshot", () => {
-    expect(parseSnapshot(JSON.stringify(VALID)).version).toBe(2);
+    expect(parseSnapshot(JSON.stringify(VALID)).version).toBe(3);
   });
 
   it("round-trips what the store exports", async () => {
@@ -42,9 +42,9 @@ describe("parseSnapshot", () => {
   });
 
   it("reports an unexpected version rather than importing it", () => {
-    expect(() => parseSnapshot(JSON.stringify({ ...VALID, version: 3 }))).toThrow(/found 3/);
+    expect(() => parseSnapshot(JSON.stringify({ ...VALID, version: 4 }))).toThrow(/found 4/);
     expect(() => parseSnapshot(JSON.stringify({ ...VALID, version: undefined }))).toThrow(
-      /version 1 or 2/,
+      /version 1, 2 or 3/,
     );
   });
 
@@ -57,7 +57,8 @@ describe("parseSnapshot", () => {
 });
 
 describe("migrating a version 1 backup", () => {
-  function problem(slug: string, sources: ProblemState["sources"]): ProblemState {
+  /** Shaped as version 1 stored it, which is the only thing the migration ever sees. */
+  function problem(slug: string, sources: ProviderId[]) {
     return {
       slug,
       status: "solved",
@@ -89,7 +90,7 @@ describe("migrating a version 1 backup", () => {
   const migrated = parseSnapshot(JSON.stringify(legacy));
 
   it("reports itself as the current version", () => {
-    expect(migrated.version).toBe(2);
+    expect(migrated.version).toBe(3);
   });
 
   it("routes each card by where its problem's evidence came from", () => {

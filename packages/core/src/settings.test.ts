@@ -156,8 +156,10 @@ describe("the stale leetcode.enabled flag", () => {
     const { providers } = withDefaults(preAdapter);
 
     expect(providers.neetcode.username).toBe("curtis");
-    expect(providers.neetcode.lastFullSyncAt).toBe(1_700_000_000_000);
     expect(providers.neetcode.enabled).toBe(true);
+    // The cursor is the one exception, cleared by the 2 -> 3 step below: an install this
+    // old never ran the submission walk either.
+    expect(providers.neetcode.lastFullSyncAt).toBeNull();
   });
 
   it("stamps the version so the correction happens once", () => {
@@ -189,6 +191,70 @@ describe("the stale leetcode.enabled flag", () => {
     };
 
     expect(withDefaults(disabled).providers.leetcode.enabled).toBe(false);
+  });
+});
+
+describe("the shared NeetCode sync cursor", () => {
+  /** An install whose cursor was set by completed-set reads, before the activity walk. */
+  const preActivityWalk = {
+    settingsVersion: 2,
+    providers: {
+      leetcode: { ...DEFAULT_SETTINGS.providers.leetcode },
+      neetcode: {
+        enabled: true,
+        username: "curtis",
+        lastFullSyncAt: 1_786_929_717_000,
+        lastIncrementalSyncAt: 1_786_929_717_000,
+      },
+    },
+  } as unknown as Partial<Settings>;
+
+  it("clears the cursor so the history walk runs once in full", () => {
+    // Sharing one cursor between the completed-set reads and the submission walk meant
+    // the walk inherited a recent timestamp and only ever fetched the last day.
+    const { providers } = withDefaults(preActivityWalk);
+
+    expect(providers.neetcode.lastFullSyncAt).toBeNull();
+    expect(providers.neetcode.lastIncrementalSyncAt).toBeNull();
+  });
+
+  it("keeps everything else about the provider", () => {
+    const { providers } = withDefaults(preActivityWalk);
+
+    expect(providers.neetcode.username).toBe("curtis");
+    expect(providers.neetcode.enabled).toBe(true);
+  });
+
+  it("leaves LeetCode's cursor alone", () => {
+    const stored = {
+      ...preActivityWalk,
+      providers: {
+        ...(preActivityWalk as { providers: Settings["providers"] }).providers,
+        leetcode: {
+          enabled: true,
+          username: null,
+          lastFullSyncAt: 1_786_000_000_000,
+          lastIncrementalSyncAt: 1_786_000_000_000,
+        },
+      },
+    } as unknown as Partial<Settings>;
+
+    // Only NeetCode had two surfaces sharing a cursor; re-walking LeetCode's history
+    // would be minutes of requests for nothing.
+    expect(withDefaults(stored).providers.leetcode.lastFullSyncAt).toBe(1_786_000_000_000);
+  });
+
+  it("doesn't clear it again once the walk has run", () => {
+    const after = withDefaults(preActivityWalk);
+    const synced = {
+      ...after,
+      providers: {
+        ...after.providers,
+        neetcode: { ...after.providers.neetcode, lastFullSyncAt: 1_787_000_000_000 },
+      },
+    };
+
+    expect(withDefaults(synced).providers.neetcode.lastFullSyncAt).toBe(1_787_000_000_000);
   });
 });
 

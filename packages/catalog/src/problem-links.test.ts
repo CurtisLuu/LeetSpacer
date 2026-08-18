@@ -53,6 +53,23 @@ describe("createProblemLinks", () => {
     });
   });
 
+  it("translates a NeetCode slug back to LeetCode's", () => {
+    // NeetCode's submission records identify problems this way round.
+    expect(links.leetcodeSlug("two-integer-sum")).toBe("two-sum");
+    expect(links.leetcodeSlug("duplicate-integer")).toBe("contains-duplicate");
+    expect(links.leetcodeSlug("not-a-neetcode-problem")).toBeNull();
+  });
+
+  it("hands over the whole table for callers that can't reach the catalog", () => {
+    // A content script can't fetch an extension asset, so the background ships this.
+    const table = links.neetcodeToLeetcode();
+
+    expect(Object.keys(table)).toHaveLength(links.size);
+    expect(table["three-integer-sum"]).toBe("3sum");
+    // Round-trips with the forward lookup, or the two would drift.
+    for (const [nc, lc] of Object.entries(table)) expect(links.neetcodeSlug(lc)).toBe(nc);
+  });
+
   it("degrades to LeetCode when the map is empty", () => {
     const empty = createProblemLinks({ generatedAt: null, bySlug: {} });
     expect(empty.size).toBe(0);

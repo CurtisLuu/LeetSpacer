@@ -3,7 +3,7 @@
  * `@lcs/store`'s IndexedDB version is checked against.
  */
 
-import { type ProblemState, type ProgressEvent, type ReviewCard, type ReviewLog, type Timestamp, cardKey } from "./model.js";
+import { type ProblemState, type ProgressEvent, type ReviewCard, type ReviewLog, type Timestamp, cardKey, problemKey } from "./model.js";
 import { type Settings, withDefaults } from "./settings.js";
 import type { Store, StoreSnapshot } from "./store.js";
 
@@ -15,7 +15,7 @@ export function createMemoryStore(initial?: Partial<StoreSnapshot>): Store {
   let settings: Settings = withDefaults(initial?.settings);
 
   for (const ev of initial?.events ?? []) events.set(ev.id, ev);
-  for (const p of initial?.problems ?? []) problems.set(p.slug, p);
+  for (const p of initial?.problems ?? []) problems.set(problemKey(p.provider, p.slug), p);
   for (const c of initial?.cards ?? []) cards.set(cardKey(c.track, c.slug), c);
   for (const l of initial?.logs ?? []) logs.set(l.id, l);
 
@@ -52,26 +52,27 @@ export function createMemoryStore(initial?: Partial<StoreSnapshot>): Store {
     },
 
     problems: {
-      async get(slug) {
-        return problems.get(slug);
+      async get(provider, slug) {
+        return problems.get(problemKey(provider, slug));
       },
-      async getMany(slugs) {
+      async getMany(provider, slugs) {
         const out: ProblemState[] = [];
         for (const slug of slugs) {
-          const found = problems.get(slug);
+          const found = problems.get(problemKey(provider, slug));
           if (found) out.push(found);
         }
         return out;
       },
-      async all() {
-        return [...problems.values()];
+      async all(provider) {
+        const found = [...problems.values()];
+        return provider === undefined ? found : found.filter((p) => p.provider === provider);
       },
       async put(states) {
-        for (const s of states) problems.set(s.slug, s);
+        for (const s of states) problems.set(problemKey(s.provider, s.slug), s);
       },
-      async remove(slugs) {
+      async remove(provider, slugs) {
         let removed = 0;
-        for (const slug of slugs) if (problems.delete(slug)) removed += 1;
+        for (const slug of slugs) if (problems.delete(problemKey(provider, slug))) removed += 1;
         return removed;
       },
     },
@@ -136,7 +137,7 @@ export function createMemoryStore(initial?: Partial<StoreSnapshot>): Store {
 
     async exportSnapshot() {
       return {
-        version: 2,
+        version: 3,
         exportedAt: Date.now(),
         events: [...events.values()],
         problems: [...problems.values()],
@@ -149,7 +150,7 @@ export function createMemoryStore(initial?: Partial<StoreSnapshot>): Store {
     async importSnapshot(snapshot, mode) {
       if (mode === "replace") await store.clear();
       for (const ev of snapshot.events) if (!events.has(ev.id)) events.set(ev.id, ev);
-      for (const p of snapshot.problems) problems.set(p.slug, p);
+      for (const p of snapshot.problems) problems.set(problemKey(p.provider, p.slug), p);
       for (const c of snapshot.cards) cards.set(cardKey(c.track, c.slug), c);
       for (const l of snapshot.logs) logs.set(l.id, l);
       settings = withDefaults(snapshot.settings);

@@ -22,22 +22,20 @@ export interface SeedResult {
  * cards that already exist. Re-running a sync must never reset a schedule you've been
  * building.
  *
- * A problem belongs to a track when that provider contributed evidence for it, so a
- * problem you've done on both sites is seeded into both — independently, which is the
- * point of the split.
+ * A track is seeded only from its own provider's records, so a problem you've done on both
+ * sites gets a card in each — with that site's own dates and attempt counts behind it.
  */
 export async function seedMissingCards(
   store: Store,
   now: number = Date.now(),
 ): Promise<SeedResult> {
   const settings = await store.settings.get();
-  const problems = await store.problems.all();
-
   const seeded = { leetcode: 0, neetcode: 0 } as Record<TrackId, number>;
 
   for (const track of TRACK_IDS) {
-    const created = await seedTrack(store, settings, problems, track, now);
-    seeded[track] = created;
+    // A track is fed by its own provider's records and nothing else.
+    const problems = await store.problems.all(track);
+    seeded[track] = await seedTrack(store, settings, problems, track, now);
   }
 
   return { seeded, total: seeded.leetcode + seeded.neetcode };
@@ -64,7 +62,6 @@ async function seedTrack(
 
   for (const problem of problems) {
     if (problem.status !== "solved" || problem.lastSolvedAt === null) continue;
-    if (!problem.sources.includes(track)) continue;
     if (existing.has(problem.slug)) continue;
 
     const card = scheduler.seed(

@@ -30,3 +30,36 @@ export function relativeDays(days: number): string {
   const months = Math.round(rounded / 30);
   return months === 1 ? "1 month" : `${months} months`;
 }
+
+/**
+ * How long until a card unlocks, at the coarsest useful precision.
+ *
+ * Seconds only under a minute, then minutes, hours, days. A learning-step card comes
+ * back in six minutes and a mature one in eight months, and the same string has to carry
+ * both without turning into "0.004 months".
+ */
+export function formatCountdown(msUntilDue: number): string {
+  if (msUntilDue <= 0) return "due now";
+
+  const seconds = Math.ceil(msUntilDue / 1000);
+  if (seconds < 60) return `${seconds}s`;
+
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+
+  // Rounds rather than ceils from here up: "2h" is a better answer than "3h" for
+  // something 2 hours and 5 minutes away.
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${Math.max(1, hours)}h`;
+
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${Math.max(1, days)}d`;
+
+  const months = Math.round(days / 30);
+  return months < 12 ? `${months}mo` : `${Math.round(months / 12)}y`;
+}
+
+/** True when a card is close enough that a live-ticking timer is worth showing. */
+export function isImminent(msUntilDue: number): boolean {
+  return msUntilDue > 0 && msUntilDue < 60 * 60 * 1000;
+}

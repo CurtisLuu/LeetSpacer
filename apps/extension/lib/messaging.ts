@@ -93,7 +93,12 @@ export interface MessageMap {
    */
   "sync:claim": {
     req: { provider: ProviderId };
-    res: { mode: SyncMode | null; since: number };
+    res: {
+      mode: SyncMode | null;
+      since: number;
+      /** Why a null mode was returned. Silence here is impossible to diagnose from. */
+      reason?: "disabled" | "in-flight" | "too-soon";
+    };
   };
   /** Release the claim and record the outcome. Must follow every successful claim. */
   "sync:completed": {
@@ -116,7 +121,36 @@ export interface MessageMap {
       scheduledAhead: number;
       /** When the next not-yet-due card comes up, or null if none are waiting. */
       nextDueAt: number | null;
+      /**
+       * Reviews graded in this track since local midnight.
+       *
+       * Read from the log rather than counted in the panel, so it survives the panel
+       * being closed — which it is, most of the time.
+       */
+      reviewedToday: number;
     };
+  };
+  /**
+   * Every card in a track, soonest-due first — the browse list.
+   *
+   * Separate from `reviews:due` because it is not polled: it is fetched when the list is
+   * opened, and an account with thousands of cards shouldn't ship all of them every five
+   * seconds to render a queue of ten.
+   */
+  "reviews:all": {
+    req: { track: TrackId };
+    res: { items: ReviewItem[]; track: TrackId };
+  };
+  /**
+   * The NeetCode -> LeetCode slug table.
+   *
+   * The NeetCode content script needs it to key submissions, and a content script can't
+   * fetch an extension asset unless it's declared web-accessible — which would hand the
+   * whole catalogue to any page on the origin. Cheaper and narrower to pass it over.
+   */
+  "catalog:neetcode-slugs": {
+    req: Record<string, never>;
+    res: { byNeetcodeSlug: Record<string, string> };
   };
   "reviews:grade": {
     req: { track: TrackId; slug: string; rating: ReviewRating };

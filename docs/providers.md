@@ -171,6 +171,48 @@ Other callable functions seen on the same endpoint, not currently used:
 when. Cards therefore seed from the moment of first sync unless dates are supplied from
 elsewhere — see the GitHub Sync repository below.
 
+### Confirmed — submission history
+
+Probed against a live account on 2026-08-17. Two callables, both used by NeetCode's own
+activity page, both reached at `POST /api/callableFunctionHttp` with a Firebase ID token:
+
+```
+{"data":{"functionId":"getUserStreakData"}}
+-> { joined: "2025-11-21", activityByDate: { "2026-08-17": { count: 7, hasActivity: true }, … },
+     currentStreak, maxStreak, … }
+
+{"data":{"functionId":"getUserDailyActivity","date":"2026-08-17"}}
+-> { date, totalSubmissions: 7, acceptedCount: 6,
+     submissions: [ { problemId: "three-integer-sum", problemName: "3Sum",
+                      difficulty: "Medium", language: "python",
+                      timestamp: "2026-08-17T19:49:39.344Z", v2SubmissionIndex,
+                      status: "Accepted", time, memory } ] }
+```
+
+Three things matter here:
+
+- **`problemId` is NeetCode's slug**, not a display name, so the join is exact — the
+  bundled slug map translates `three-integer-sum` to `3sum`. A slug the map doesn't know is
+  dropped, never guessed at.
+- **`timestamp` is ISO 8601**, unlike LeetCode's epoch seconds. Its own parser, because
+  feeding one format to the other's parser yields a plausible-looking wrong date.
+- **`activityByDate` bounds the walk.** One request per active day, no paging.
+
+Coverage on the account probed: 58 active days, 71 of its 77 completed problems, 34 with
+more than one submission. The remainder are problems ticked or solved elsewhere, which have
+no submission record and stay dateless.
+
+**This path does handle a credential**, which nothing else in the extension does. These
+are Firebase callables and take a bearer token.
+
+Do *not* read it from Firebase's IndexedDB. The stored copy expires hourly and is stale
+far more often than not — that produced an HTTP 401 on every sync — and opening that
+database creates it when absent, which is not ours to do on someone else's origin. The
+MAIN-world observer relays the `Authorization` header off the page's own callable requests
+instead; the page makes one on load, so the token used is by definition one that just
+worked. Held in memory for the life of the tab, never stored or transmitted. A 401
+mid-walk means it aged out, and the fix is to reload the page.
+
 ### Still unconfirmed
 
 Curated list membership (Blind 75 / NC150 / NC250) and the roadmap's prerequisite edges.

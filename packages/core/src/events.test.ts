@@ -81,12 +81,18 @@ describe("applyEvent", () => {
     expect(state.firstSolvedAt).toBe(T0 + 120_000);
   });
 
-  it("unions the providers that contributed evidence", () => {
-    const fromLeetCode = applyEvent(undefined, solved("two-sum", T0, "leetcode"));
-    const fromBoth = applyEvent(fromLeetCode, listChecked("two-sum", "neetcode150", true, T0 + DAY));
+  it("keeps the two providers' records apart", () => {
+    // The whole point of the split: the same problem seen by both sites produces two
+    // rows, each carrying only what that site actually said.
+    const state = foldEvents(new Map(), [
+      submission("two-sum", T0, "accepted"),
+      solved("two-sum", T0 + DAY, "neetcode"),
+    ]);
 
-    expect(fromBoth.sources).toEqual(["leetcode", "neetcode"]);
-    expect(fromBoth.listChecked).toEqual({ neetcode150: true });
+    expect([...state.keys()].sort()).toEqual(["leetcode:two-sum", "neetcode:two-sum"]);
+    // LeetCode saw a real submission; NeetCode only ever said "done".
+    expect(state.get("leetcode:two-sum")).toMatchObject({ attempts: 1, hasDatedSolve: true });
+    expect(state.get("neetcode:two-sum")).toMatchObject({ attempts: 0, hasDatedSolve: false });
   });
 
   it("treats a NeetCode checkmark as list state, not proof of a solve", () => {
@@ -113,8 +119,8 @@ describe("foldEvents", () => {
       solved("two-sum", T0 + 5 * DAY),
     ];
 
-    const forward = foldEvents(new Map(), events).get("two-sum");
-    const reversed = foldEvents(new Map(), [...events].reverse()).get("two-sum");
+    const forward = foldEvents(new Map(), events).get("leetcode:two-sum");
+    const reversed = foldEvents(new Map(), [...events].reverse()).get("leetcode:two-sum");
 
     expect(forward).toEqual(reversed);
   });
@@ -123,25 +129,25 @@ describe("foldEvents", () => {
     const initial = foldEvents(new Map(), [solved("two-sum", T0)]);
     const delta = foldEvents(initial, [solved("valid-anagram", T0 + DAY)]);
 
-    expect([...delta.keys()]).toEqual(["valid-anagram"]);
+    expect([...delta.keys()]).toEqual(["leetcode:valid-anagram"]);
   });
 
   it("carries forward existing state for problems in the batch", () => {
     const initial = foldEvents(new Map(), [submission("two-sum", T0, "wrong_answer")]);
     const delta = foldEvents(initial, [submission("two-sum", T0 + DAY, "accepted")]);
 
-    expect(delta.get("two-sum")?.attempts).toBe(2);
-    expect(delta.get("two-sum")?.status).toBe("solved");
+    expect(delta.get("leetcode:two-sum")?.attempts).toBe(2);
+    expect(delta.get("leetcode:two-sum")?.status).toBe("solved");
   });
 
   it("marks a solve dated only when a submission carried its own timestamp", () => {
     // This is what tells seeding whether a card's due date can be trusted. An accepted
     // submission knows when it happened; a bare problem_solved does not.
     const dated = foldEvents(new Map(), [submission("two-sum", T0, "accepted")]);
-    expect(dated.get("two-sum")?.hasDatedSolve).toBe(true);
+    expect(dated.get("leetcode:two-sum")?.hasDatedSolve).toBe(true);
 
     const undated = foldEvents(new Map(), [solved("valid-anagram", T0)]);
-    expect(undated.get("valid-anagram")?.hasDatedSolve).toBe(false);
+    expect(undated.get("leetcode:valid-anagram")?.hasDatedSolve).toBe(false);
   });
 
   it("never lets a dateless sighting undo a real date", () => {
@@ -150,14 +156,14 @@ describe("foldEvents", () => {
     const initial = foldEvents(new Map(), [submission("two-sum", T0, "accepted")]);
     const later = foldEvents(initial, [solved("two-sum", T0 + 5 * DAY)]);
 
-    expect(later.get("two-sum")?.hasDatedSolve).toBe(true);
+    expect(later.get("leetcode:two-sum")?.hasDatedSolve).toBe(true);
   });
 
   it("leaves a failed submission undated", () => {
     const failed = foldEvents(new Map(), [submission("two-sum", T0, "wrong_answer")]);
 
-    expect(failed.get("two-sum")?.hasDatedSolve).toBe(false);
-    expect(failed.get("two-sum")?.status).toBe("attempted");
+    expect(failed.get("leetcode:two-sum")?.hasDatedSolve).toBe(false);
+    expect(failed.get("leetcode:two-sum")?.status).toBe("attempted");
   });
 
   it("won't let a dateless report drag a real solve date forward", () => {
@@ -168,7 +174,7 @@ describe("foldEvents", () => {
     const state = foldEvents(new Map(), [
       submission("two-sum", real, "accepted"),
       solved("two-sum", T0),
-    ]).get("two-sum");
+    ]).get("leetcode:two-sum");
 
     expect(state?.lastSolvedAt).toBe(real);
     expect(state?.hasDatedSolve).toBe(true);
@@ -178,8 +184,8 @@ describe("foldEvents", () => {
     const real = T0 - 365 * DAY;
     const events = [submission("two-sum", real, "accepted"), solved("two-sum", T0)];
 
-    const forward = foldEvents(new Map(), events).get("two-sum");
-    const reversed = foldEvents(new Map(), [...events].reverse()).get("two-sum");
+    const forward = foldEvents(new Map(), events).get("leetcode:two-sum");
+    const reversed = foldEvents(new Map(), [...events].reverse()).get("leetcode:two-sum");
 
     expect(forward?.lastSolvedAt).toBe(real);
     expect(reversed?.lastSolvedAt).toBe(real);
@@ -189,27 +195,27 @@ describe("foldEvents", () => {
     // NeetCode first, so the only date available is "when we noticed". A later LeetCode
     // sync knows better and should overwrite it, not take the max of the two.
     const guessed = foldEvents(new Map(), [solved("two-sum", T0)]);
-    expect(guessed.get("two-sum")?.lastSolvedAt).toBe(T0);
+    expect(guessed.get("leetcode:two-sum")?.lastSolvedAt).toBe(T0);
 
     const corrected = foldEvents(guessed, [
       submission("two-sum", T0 - 100 * DAY, "accepted"),
     ]);
-    expect(corrected.get("two-sum")?.lastSolvedAt).toBe(T0 - 100 * DAY);
-    expect(corrected.get("two-sum")?.firstSolvedAt).toBe(T0 - 100 * DAY);
+    expect(corrected.get("leetcode:two-sum")?.lastSolvedAt).toBe(T0 - 100 * DAY);
+    expect(corrected.get("leetcode:two-sum")?.firstSolvedAt).toBe(T0 - 100 * DAY);
   });
 
   it("still combines two real dates rather than replacing", () => {
     const state = foldEvents(new Map(), [
       submission("two-sum", T0 - 100 * DAY, "accepted"),
       submission("two-sum", T0 - 10 * DAY, "accepted"),
-    ]).get("two-sum");
+    ]).get("leetcode:two-sum");
 
     expect(state?.firstSolvedAt).toBe(T0 - 100 * DAY);
     expect(state?.lastSolvedAt).toBe(T0 - 10 * DAY);
   });
 
   it("still accepts a dateless report when nothing better is known", () => {
-    const state = foldEvents(new Map(), [solved("is-anagram", T0)]).get("is-anagram");
+    const state = foldEvents(new Map(), [solved("is-anagram", T0)]).get("leetcode:is-anagram");
 
     expect(state?.lastSolvedAt).toBe(T0);
     expect(state?.status).toBe("solved");

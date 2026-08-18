@@ -70,10 +70,16 @@ export interface RoadmapTopic {
 export type ProblemStatus = "todo" | "attempted" | "solved";
 
 /**
- * Everything we know about one user's relationship to one problem.
+ * Everything one provider knows about one user's relationship to one problem.
  * This is a *projection* of the event log, never edited directly by adapters.
+ *
+ * Keyed by `(provider, slug)`, not slug alone: the two sites are kept apart all the way
+ * down. LeetCode counting four attempts on a problem says nothing about how it went on
+ * NeetCode, and merging the two produced a record that belonged to neither — a solve date
+ * from one and an attempt count from the other, seeding both tracks identically.
  */
 export interface ProblemState {
+  provider: ProviderId;
   slug: string;
   status: ProblemStatus;
   firstSolvedAt: Timestamp | null;
@@ -82,8 +88,6 @@ export interface ProblemState {
   attempts: number;
   /** Accepted submissions observed. */
   acceptedCount: number;
-  /** Providers that have contributed evidence about this problem. */
-  sources: ProviderId[];
   /**
    * Whether `lastSolvedAt` is a real solve date or just when we first heard about it.
    *
@@ -99,15 +103,19 @@ export interface ProblemState {
   updatedAt: Timestamp;
 }
 
-export function emptyProblemState(slug: string, at: Timestamp): ProblemState {
+export function emptyProblemState(
+  provider: ProviderId,
+  slug: string,
+  at: Timestamp,
+): ProblemState {
   return {
+    provider,
     slug,
     status: "todo",
     firstSolvedAt: null,
     lastSolvedAt: null,
     attempts: 0,
     acceptedCount: 0,
-    sources: [],
     hasDatedSolve: false,
     listChecked: {},
     updatedAt: at,
@@ -222,6 +230,11 @@ export type ProgressEventType = ProgressEvent["type"];
  */
 export function cardKey(track: TrackId, slug: string): string {
   return `${track}:${slug}`;
+}
+
+/** The identity of a problem state, flattened for Map keys. See `cardKey`. */
+export function problemKey(provider: ProviderId, slug: string): string {
+  return `${provider}:${slug}`;
 }
 
 export function eventId(

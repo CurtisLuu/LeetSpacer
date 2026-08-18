@@ -33,6 +33,21 @@ export interface ProblemLinks {
   readonly size: number;
   /** NeetCode's slug for a LeetCode slug, or null when NeetCode doesn't host it. */
   neetcodeSlug(slug: string): string | null;
+  /**
+   * The reverse: LeetCode's slug for a NeetCode one.
+   *
+   * NeetCode's submission records identify problems by its own slug, so this is the join
+   * that lets those become events keyed the way everything else is.
+   */
+  leetcodeSlug(neetcodeSlug: string): string | null;
+  /**
+   * The whole NeetCode -> LeetCode table.
+   *
+   * For callers that can't reach the catalog themselves: a content script can't fetch an
+   * extension asset without making it web-accessible to the page, so the background hands
+   * this over instead.
+   */
+  neetcodeToLeetcode(): Record<string, string>;
   resolve(slug: string, prefer: ProviderId): ResolvedLink;
 }
 
@@ -49,10 +64,16 @@ export function createProblemLinks(data: NeetcodeSlugData): ProblemLinks {
 
   const neetcodeSlug = (slug: string) => bySlug.get(slug) ?? null;
 
+  // Built once rather than scanned per lookup: a NeetCode sync translates a slug for
+  // every submission it reads, which is thousands of calls on a first sync.
+  const byNeetcodeSlug = new Map([...bySlug].map(([lc, nc]) => [nc, lc]));
+
   return {
     generatedAt: data.generatedAt ?? null,
     size: bySlug.size,
     neetcodeSlug,
+    leetcodeSlug: (nc) => byNeetcodeSlug.get(nc) ?? null,
+    neetcodeToLeetcode: () => Object.fromEntries(byNeetcodeSlug),
     resolve(slug, prefer) {
       if (prefer === "neetcode") {
         const nc = neetcodeSlug(slug);

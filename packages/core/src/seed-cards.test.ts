@@ -64,7 +64,7 @@ describe("seedMissingCards", () => {
     expect(await store.cards.get("leetcode", "is-anagram")).toBeUndefined();
   });
 
-  it("seeds a problem solved on both sites into both tracks", async () => {
+  it("seeds each track from its own provider's record, not a merged one", async () => {
     const store = await seeded([submission("two-sum", NOW - 200 * DAY), completed("two-sum")]);
 
     const leetcode = await store.cards.get("leetcode", "two-sum");
@@ -72,10 +72,33 @@ describe("seedMissingCards", () => {
 
     expect(leetcode).toBeDefined();
     expect(neetcode).toBeDefined();
-    // Both start from the same fact — one real solve date, 200 days ago — because that's
-    // the truth about the problem. They diverge once either is graded.
+    // LeetCode watched the submission land 200 days ago, so its card is dated from then.
     expect(leetcode!.lastReview).toBe(NOW - 200 * DAY);
-    expect(neetcode!.lastReview).toBe(NOW - 200 * DAY);
+    // NeetCode only ever said "done", so its card is seeded from now. Previously the two
+    // shared one record and the NeetCode card inherited LeetCode's date — a solve NeetCode
+    // never witnessed.
+    expect(neetcode!.lastReview).toBe(NOW);
+  });
+
+  it("keeps attempt counts on the provider that observed them", async () => {
+    // Three LeetCode submissions seed a harder card there; NeetCode saw none of them and
+    // must not inherit the difficulty they imply.
+    const store = await seeded([
+      submission("two-sum", NOW - 10 * DAY, "wrong_answer", "a"),
+      submission("two-sum", NOW - 10 * DAY, "wrong_answer", "b"),
+      submission("two-sum", NOW - 9 * DAY, "accepted", "c"),
+      completed("two-sum"),
+    ]);
+
+    const leetcode = await store.problems.get("leetcode", "two-sum");
+    const neetcode = await store.problems.get("neetcode", "two-sum");
+
+    expect(leetcode!.attempts).toBe(3);
+    expect(neetcode!.attempts).toBe(0);
+
+    const harder = (await store.cards.get("leetcode", "two-sum"))!.difficulty;
+    const easier = (await store.cards.get("neetcode", "two-sum"))!.difficulty;
+    expect(harder).toBeGreaterThan(easier);
   });
 
   it("keeps the two copies independent once one is graded", async () => {

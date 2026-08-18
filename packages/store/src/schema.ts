@@ -16,8 +16,12 @@ export const DB_NAME = "leetcode-spaced";
  *
  * v3 indexed `events` by provider, so a per-track event count doesn't mean loading the
  * entire log on every status poll.
+ *
+ * v4 split `problems` per provider: keyed on `[provider, slug]` instead of `slug`. The old
+ * merged rows can't be pulled apart, so the upgrade empties the store and the extension
+ * refolds it from the event log, which records a provider on every entry.
  */
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 
 /** Settings and sync cursors share one key-value store to keep the schema small. */
 export const SETTINGS_KEY = "settings";
@@ -30,9 +34,10 @@ export interface LcsDB extends DBSchema {
     indexes: { observedAt: number; provider: string };
   };
   problems: {
-    key: string;
+    /** `[provider, slug]`. */
+    key: [string, string];
     value: ProblemState;
-    indexes: { status: string; lastSolvedAt: number };
+    indexes: { provider: string };
   };
   cards: {
     /** `[track, slug]`. */

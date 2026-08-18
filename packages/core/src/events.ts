@@ -5,18 +5,20 @@
  * storage boundary (`EventStore.append` keys on the deterministic `event.id`), which
  * lets this reducer keep running counters without tracking what it has already seen.
  *
- * Within that contract the fold is order-independent: timestamps combine with
- * min/max, status only ever ratchets upward, and sources union.
+ * Within that contract the fold is order-independent: timestamps combine with min/max and
+ * status only ever ratchets upward.
+ *
+ * States are keyed by `(provider, slug)`. The two providers never share a record.
  */
 
 import {
   type ProblemState,
   type ProgressEvent,
   type ProblemStatus,
-  type ProviderId,
   type Timestamp,
   emptyProblemState,
   eventOccurredAt,
+  problemKey,
 } from "./model.js";
 
 const STATUS_RANK: Record<ProblemStatus, number> = {
@@ -38,20 +40,15 @@ function latest(a: Timestamp | null, b: Timestamp): Timestamp {
   return a === null ? b : Math.max(a, b);
 }
 
-function withSource(sources: ProviderId[], provider: ProviderId): ProviderId[] {
-  return sources.includes(provider) ? sources : [...sources, provider];
-}
-
 /**
  * Apply one event to one problem's state, returning a new state object.
  * Pass `undefined` for a problem seen for the first time.
  */
 export function applyEvent(state: ProblemState | undefined, ev: ProgressEvent): ProblemState {
-  const base = state ?? emptyProblemState(ev.slug, ev.observedAt);
+  const base = state ?? emptyProblemState(ev.provider, ev.slug, ev.observedAt);
   const next: ProblemState = {
     ...base,
     listChecked: { ...base.listChecked },
-    sources: withSource(base.sources, ev.provider),
     // Defaulted rather than assumed present: states written before this field existed
     // come back from storage without it.
     hasDatedSolve: base.hasDatedSolve ?? false,
@@ -124,8 +121,9 @@ export function foldEvents(
   const touched = new Map<string, ProblemState>();
 
   for (const ev of sortByOccurrence(events)) {
-    const current = touched.get(ev.slug) ?? initial.get(ev.slug);
-    touched.set(ev.slug, applyEvent(current, ev));
+    const key = problemKey(ev.provider, ev.slug);
+    const current = touched.get(key) ?? initial.get(key);
+    touched.set(key, applyEvent(current, ev));
   }
 
   return touched;

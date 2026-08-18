@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { Rating } from "./model.js";
-import { createScheduler, gradeFromAttempts } from "./scheduler.js";
+import { createScheduler, gradeFromAttempts, withMinimumLock } from "./scheduler.js";
 
 const DAY = 86_400_000;
 const NOW = 1_786_929_717_000; // 2026-08-16
@@ -113,3 +113,45 @@ describe("review", () => {
     expect(relaxedDue).toBeGreaterThan(strictDue);
   });
 });
+
+describe("withMinimumLock", () => {
+  const card = scheduler.seed("neetcode", "two-sum", MAY, 1);
+
+  it("pushes a learning-step interval out to the floor", () => {
+    // The case this exists for: rating a problem Hard schedules it minutes away, and
+    // re-solving something six minutes later measures nothing.
+    const soon = { ...card, due: NOW + 6 * 60_000 };
+
+    expect(withMinimumLock(soon, 2, NOW).due).toBe(NOW + 2 * DAY);
+  });
+
+  it("leaves an interval that already clears the floor alone", () => {
+    const mature = { ...card, due: NOW + 30 * DAY };
+
+    // Everything above the floor is FSRS's business.
+    expect(withMinimumLock(mature, 2, NOW)).toBe(mature);
+  });
+
+  it("only ever moves the due date out, never in", () => {
+    const overdue = { ...card, due: NOW - 10 * DAY };
+
+    expect(withMinimumLock(overdue, 2, NOW).due).toBe(NOW + 2 * DAY);
+  });
+
+  it("is a no-op when the floor is off", () => {
+    const soon = { ...card, due: NOW + 6 * 60_000 };
+
+    expect(withMinimumLock(soon, 0, NOW)).toBe(soon);
+    expect(withMinimumLock(soon, Number.NaN, NOW)).toBe(soon);
+  });
+
+  it("touches nothing but the due date", () => {
+    const soon = { ...card, due: NOW + 6 * 60_000 };
+    const locked = withMinimumLock(soon, 2, NOW);
+
+    // FSRS recomputes from real elapsed time next review, so its state must stay as it
+    // left it — inventing a scheduledDays here would lie to the algorithm.
+    expect({ ...locked, due: 0 }).toEqual({ ...soon, due: 0 });
+  });
+});
+

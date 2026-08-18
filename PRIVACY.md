@@ -20,9 +20,11 @@ verdicts (Accepted, Wrong Answer, and so on), and your LeetCode username. This i
 from the same endpoints leetcode.com's own pages use, from a script running on
 leetcode.com, using the session you are already signed in with.
 
-**From neetcode.io** — the set of problems you have marked complete. NeetCode's own page
-fetches this when it loads and caches it in your browser's local storage; LeetSpacer reads
-the copy that is already there and makes no request of its own.
+**From neetcode.io** — the set of problems you have marked complete, plus your submission
+history: problem names, submission timestamps and verdicts. The completed set is read from
+the copy NeetCode's own page has already cached in local storage. The submission history is
+read from the same endpoints NeetCode's activity page uses, from a script running on
+neetcode.io.
 
 It does not read your solution code, your email address, your payment details, your
 browsing on any other site, or anything on a page you are not signed in to.
@@ -39,10 +41,21 @@ what problems exist.
 
 ## Credentials
 
-LeetSpacer never sees, stores, or transmits a password or session token. Its requests to
-LeetCode work because they run on leetcode.com and your browser attaches your existing
-cookie automatically — the same way a normal page load does. LeetCode's session cookie is
-marked `HttpOnly`, so it is not readable by extension code even in principle.
+LeetSpacer never sees or stores a password, and transmits nothing anywhere.
+
+**LeetCode.** Requests run on leetcode.com and your browser attaches your existing cookie
+automatically — the same way a normal page load does. LeetCode's session cookie is marked
+`HttpOnly`, so it is not readable by extension code even in principle.
+
+**NeetCode.** NeetCode authenticates with a short-lived bearer token rather than a cookie.
+Reading your submission history is not possible without one, so LeetSpacer reuses the
+token from a request neetcode.io has already made itself — it is observed in passing, not
+extracted from storage. It is held in memory for the life of the tab, used only for
+requests back to neetcode.io, never written to LeetSpacer's storage, never included in an
+export, and never sent anywhere else.
+
+If you would rather it did not, turn NeetCode off under Settings → Your history. The
+extension then reads nothing from the site at all.
 
 ## Your control over it
 

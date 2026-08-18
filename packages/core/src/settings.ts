@@ -1,4 +1,4 @@
-import type { ProviderId, TrackId } from "./model.js";
+import type { Difficulty, ProviderId, TrackId } from "./model.js";
 import type { SeedStrategy } from "./seeding.js";
 
 export interface ProviderSettings {
@@ -40,6 +40,18 @@ export interface TrackSettings {
   seedSpreadDays: number;
   /** Curated lists to prioritize when picking new problems. */
   preferredLists: string[];
+  /**
+   * The shortest a problem may be locked after a review, in days, by its difficulty.
+   *
+   * FSRS thinks in flashcards, where seeing a card again ten minutes later is useful. A
+   * coding problem is not a flashcard: re-solving one six minutes after the last attempt
+   * measures nothing except short-term memory of the answer you just wrote. This is the
+   * floor that keeps a learning-step interval from landing inside the same session.
+   *
+   * Only ever pushes a due date *out*. Everything above the floor is left to FSRS, so a
+   * mature card's interval is untouched.
+   */
+  minimumLockDays: Record<Difficulty, number>;
 }
 
 export interface Settings {
@@ -77,6 +89,7 @@ const NEETCODE_TRACK: TrackSettings = {
   seedStrategy: "spread",
   seedSpreadDays: 14,
   preferredLists: ["neetcode150"],
+  minimumLockDays: { Easy: 4, Medium: 2, Hard: 1 },
 };
 
 /**
@@ -92,6 +105,7 @@ const LEETCODE_TRACK: TrackSettings = {
   seedStrategy: "spread",
   seedSpreadDays: 30,
   preferredLists: [],
+  minimumLockDays: { Easy: 4, Medium: 2, Hard: 1 },
 };
 
 /**
@@ -99,8 +113,13 @@ const LEETCODE_TRACK: TrackSettings = {
  * was deferred, and every settings write persisted that. There has never been a UI to
  * change it, so a stored `false` carries no intent — it's a stale default, and leaving it
  * in place means LeetCode silently never syncs on any install that predates the adapter.
+ *
+ * 2 -> 3: NeetCode's sync cursor was set by the completed-set reads, which predate the
+ * submission-history walk by a long way. The two surfaces share one cursor, so the walk
+ * inherited a recent timestamp and only ever ran incrementally — fetching the last day and
+ * declaring the history done. Clearing the cursor buys exactly one full walk.
  */
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 
 export const DEFAULT_SETTINGS: Settings = {
   settingsVersion: SETTINGS_VERSION,
@@ -163,7 +182,13 @@ function trackWithDefaults(
   // Precedence: what was stored for this track, then whatever the pre-split settings
   // said, then this track's defaults.
   const merged = { ...fallback, ...pickLegacy(legacy), ...stored };
-  return { ...merged, preferredLists: [...merged.preferredLists] };
+  return {
+    ...merged,
+    preferredLists: [...merged.preferredLists],
+    // Spread over the fallback rather than replacing it: a stored object missing a
+    // difficulty would otherwise leave that one undefined and the clamp reading NaN.
+    minimumLockDays: { ...fallback.minimumLockDays, ...merged.minimumLockDays },
+  };
 }
 
 /**
@@ -179,10 +204,22 @@ function migrateStored(stored: Partial<Settings>): Partial<Settings> {
   if (version >= SETTINGS_VERSION) return stored;
 
   const providers = { ...stored.providers } as Settings["providers"] | undefined;
-  if (providers?.leetcode) {
+
+  if (version < 2 && providers?.leetcode) {
     // Never a user decision — there was no control for it — so a stored `false` here is
     // only ever the old default, from when the adapter didn't exist.
     providers.leetcode = { ...providers.leetcode, enabled: true };
+  }
+
+  if (version < 3 && providers?.neetcode) {
+    // Cleared, not backdated: the walk needs to start from nothing to cover the history
+    // the completed-set reads never had dates for. Costs one full pass, then settles back
+    // to incremental on its own.
+    providers.neetcode = {
+      ...providers.neetcode,
+      lastFullSyncAt: null,
+      lastIncrementalSyncAt: null,
+    };
   }
 
   return { ...stored, providers, settingsVersion: SETTINGS_VERSION };

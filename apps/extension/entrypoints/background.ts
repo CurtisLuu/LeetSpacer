@@ -9,6 +9,7 @@ import {
   distributeDueDates,
   ingestEvents,
   seedMissingCards,
+  withMinimumLock,
 } from "@lcs/core";
 
 import { getCatalog, getProblemLinks } from "../lib/catalog.js";
@@ -113,21 +114,25 @@ export default defineBackground(() => {
     "sync:status": async () => buildStatus(),
 
     "sync:claim": async ({ provider }) => {
-      const declined = { mode: null, since: 0 } as const;
       const settings = await (await getStore()).settings.get();
       const state = settings.providers[provider];
       const now = Date.now();
 
-      if (!state.enabled || syncing.has(provider)) return declined;
+      if (!state.enabled) return { mode: null, since: 0, reason: "disabled" } as const;
+      if (syncing.has(provider)) return { mode: null, since: 0, reason: "in-flight" } as const;
 
       const attempted = lastAttemptAt.get(provider);
-      if (attempted !== undefined && now - attempted < INCREMENTAL_INTERVAL_MS) return declined;
+      if (attempted !== undefined && now - attempted < INCREMENTAL_INTERVAL_MS) {
+        return { mode: null, since: 0, reason: "too-soon" } as const;
+      }
 
       const since = state.lastFullSyncAt === null
         ? null
         : (state.lastIncrementalSyncAt ?? state.lastFullSyncAt);
 
-      if (since !== null && now - since < INCREMENTAL_INTERVAL_MS) return declined;
+      if (since !== null && now - since < INCREMENTAL_INTERVAL_MS) {
+        return { mode: null, since: 0, reason: "too-soon" } as const;
+      }
 
       syncing.add(provider);
       lastAttemptAt.set(provider, now);
@@ -164,10 +169,16 @@ export default defineBackground(() => {
     "reviews:due": async ({ track, limit }) => {
       const store = await getStore();
       const now = Date.now();
-      const [settings, allDue, allCards] = await Promise.all([
+      // Local midnight, not a rolling 24 hours: "today" has to mean the same thing to
+      // the panel as it does to the person reading it.
+      const midnight = new Date();
+      midnight.setHours(0, 0, 0, 0);
+
+      const [settings, allDue, allCards, todaysLogs] = await Promise.all([
         store.settings.get(),
         store.cards.due(track, now),
         store.cards.all(track),
+        store.logs.since(midnight.getTime()),
       ]);
 
       // Everything seeded but not yet due. Mostly the dateless backfill, which the
@@ -181,34 +192,8 @@ export default defineBackground(() => {
       const cap = limit ?? settings.tracks[track].dailyReviewLimit;
       // Most overdue first — those are the ones closest to being forgotten.
       const selected = [...allDue].sort((a, b) => a.due - b.due).slice(0, cap);
-      const states = await store.problems.getMany(selected.map((card) => card.slug));
-      const byslug = new Map(states.map((state) => [state.slug, state]));
 
-      // Slugs are LeetCode titleSlugs, so the bundled catalog resolves real titles,
-      // difficulty, and tags. Falls back gracefully for anything not in it.
-      const [catalog, links] = await Promise.all([
-        getCatalog().catch(() => null),
-        getProblemLinks(),
-      ]);
-
-      const items: ReviewItem[] = selected.map((card) => {
-        const state = byslug.get(card.slug);
-        const problem = catalog?.bySlug(card.slug);
-        const link = links.resolve(card.slug, settings.problemLinkTarget);
-        return {
-          slug: card.slug,
-          title: problem?.title ?? titleFromSlug(card.slug),
-          due: card.due,
-          overdueDays: (now - card.due) / MS_PER_DAY,
-          attempts: state?.attempts ?? 0,
-          lastSolvedAt: state?.lastSolvedAt ?? null,
-          reps: card.reps,
-          difficulty: problem?.difficulty ?? null,
-          topicTags: problem?.topicTags.slice(0, 2) ?? [],
-          url: link.href,
-          site: link.site,
-        };
-      });
+      const items = await toReviewItems(selected, track, settings.problemLinkTarget, now);
 
       return {
         items,
@@ -217,8 +202,27 @@ export default defineBackground(() => {
         track,
         scheduledAhead: waiting.length,
         nextDueAt,
+        reviewedToday: todaysLogs.filter((log) => log.track === track).length,
       };
     },
+
+    "reviews:all": async ({ track }) => {
+      const store = await getStore();
+      const now = Date.now();
+      const [settings, cards] = await Promise.all([
+        store.settings.get(),
+        store.cards.all(track),
+      ]);
+
+      // Soonest first, so the ones about to unlock are at the top where a countdown is
+      // worth reading.
+      const sorted = [...cards].sort((a, b) => a.due - b.due);
+      return { items: await toReviewItems(sorted, track, settings.problemLinkTarget, now), track };
+    },
+
+    "catalog:neetcode-slugs": async () => ({
+      byNeetcodeSlug: (await getProblemLinks()).neetcodeToLeetcode(),
+    }),
 
     "data:changed": async () => {
       await refreshBadge();
@@ -263,19 +267,67 @@ export default defineBackground(() => {
       ]);
       if (!card) throw new Error(`No review card for "${slug}" in the ${track} track`);
 
-      const scheduler = createScheduler({
-        requestRetention: settings.tracks[track].requestRetention,
-      });
-      const { card: next, log } = scheduler.review(card, rating, Date.now());
+      const tuning = settings.tracks[track];
+      const scheduler = createScheduler({ requestRetention: tuning.requestRetention });
+      const now = Date.now();
+      const { card: next, log } = scheduler.review(card, rating, now);
 
-      await store.cards.put([next]);
+      // A problem the catalogue doesn't know sits in the middle rather than skipping the
+      // floor entirely — no difficulty is not the same as no opinion.
+      const catalog = await getCatalog().catch(() => null);
+      const difficulty = catalog?.bySlug(slug)?.difficulty ?? "Medium";
+      const locked = withMinimumLock(next, tuning.minimumLockDays[difficulty], now);
+
+      await store.cards.put([locked]);
       await store.logs.append([log]);
       await refreshBadge();
 
-      return { nextDue: next.due };
+      return { nextDue: locked.due };
     },
   });
 });
+
+/**
+ * Flatten cards into the shape the panel renders, resolving titles, difficulty and the
+ * outbound link.
+ *
+ * Shared by the queue and the browse list so the two can't drift — a problem that reads
+ * one way in the queue and another in the list is worse than either.
+ */
+async function toReviewItems(
+  cards: readonly ReviewCard[],
+  track: TrackId,
+  linkTarget: ProviderId,
+  now: number,
+): Promise<ReviewItem[]> {
+  const store = await getStore();
+  // Scoped to the track's own provider: its attempt counts and dates, nobody else's.
+  const states = await store.problems.getMany(track, cards.map((card) => card.slug));
+  const byslug = new Map(states.map((state) => [state.slug, state]));
+
+  // Slugs are LeetCode titleSlugs, so the bundled catalog resolves real titles,
+  // difficulty, and tags. Falls back gracefully for anything not in it.
+  const [catalog, links] = await Promise.all([getCatalog().catch(() => null), getProblemLinks()]);
+
+  return cards.map((card) => {
+    const state = byslug.get(card.slug);
+    const problem = catalog?.bySlug(card.slug);
+    const link = links.resolve(card.slug, linkTarget);
+    return {
+      slug: card.slug,
+      title: problem?.title ?? titleFromSlug(card.slug),
+      due: card.due,
+      overdueDays: (now - card.due) / MS_PER_DAY,
+      attempts: state?.attempts ?? 0,
+      lastSolvedAt: state?.lastSolvedAt ?? null,
+      reps: card.reps,
+      difficulty: problem?.difficulty ?? null,
+      topicTags: problem?.topicTags.slice(0, 2) ?? [],
+      url: link.href,
+      site: link.site,
+    };
+  });
+}
 
 /** Update one provider's settings without disturbing the other's. */
 async function patchProvider(
@@ -358,11 +410,7 @@ async function getCatalogStats(): Promise<{ count: number; generatedAt: string |
 async function buildStatus(): Promise<SyncStatus> {
   const store = await getStore();
   const now = Date.now();
-  const [settings, problems, catalog] = await Promise.all([
-    store.settings.get(),
-    store.problems.all(),
-    getCatalogStats(),
-  ]);
+  const [settings, catalog] = await Promise.all([store.settings.get(), getCatalogStats()]);
 
   const providers: ProviderStatus[] = ACTIVE_PROVIDERS.map((id) => ({
     provider: id,
@@ -376,18 +424,23 @@ async function buildStatus(): Promise<SyncStatus> {
   // Reported for every track, not just the active one, so the selector can show what's
   // waiting in the track you're not looking at.
   const tracks = {} as SyncStatus["tracks"];
+  let tracked = 0;
+  let solved = 0;
   for (const track of TRACK_IDS) {
-    const [cards, due, events] = await Promise.all([
+    const [cards, due, events, problems] = await Promise.all([
       store.cards.all(track),
       store.cards.due(track, now),
       // Scoped to the provider that feeds this track. A combined total sitting between
       // two track-scoped numbers reads as a bug, because it looks like one of the three
       // is counting something else — which it was.
       store.events.count(track),
+      store.problems.all(track),
     ]);
+    tracked += problems.length;
+    solved += problems.filter((p) => p.status === "solved").length;
     tracks[track] = {
       tracked: cards.length,
-      solved: problems.filter((p) => p.status === "solved" && p.sources.includes(track)).length,
+      solved: problems.filter((p) => p.status === "solved").length,
       due: due.length,
       events,
     };
@@ -398,8 +451,8 @@ async function buildStatus(): Promise<SyncStatus> {
     providers,
     tracks,
     activeTrack: settings.activeTrack,
-    problemsTracked: problems.length,
-    solved: problems.filter((p) => p.status === "solved").length,
+    problemsTracked: tracked,
+    solved,
     catalog,
   };
 }

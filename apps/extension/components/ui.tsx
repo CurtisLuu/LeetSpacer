@@ -161,13 +161,23 @@ export function Section({
   );
 }
 
-const PROVIDER_LABELS: Record<string, { name: string; url: string }> = {
-  leetcode: { name: "LeetCode", url: "https://leetcode.com/problemset/" },
-  neetcode: { name: "NeetCode", url: "https://neetcode.io/practice" },
+const PROVIDER_LABELS: Record<string, { name: string; url: string; host: string }> = {
+  leetcode: {
+    name: "LeetCode",
+    url: "https://leetcode.com/problemset/",
+    host: "leetcode.com",
+  },
+  neetcode: {
+    name: "NeetCode",
+    url: "https://neetcode.io/practice",
+    host: "neetcode.io",
+  },
 };
 
 export function ProviderCard({ status }: { status: ProviderStatus }) {
-  const label = PROVIDER_LABELS[status.provider] ?? { name: status.provider, url: "#" };
+  const label =
+    PROVIDER_LABELS[status.provider] ??
+    { name: status.provider, url: "#", host: status.provider };
 
   return (
     <Card>
@@ -188,25 +198,32 @@ export function ProviderCard({ status }: { status: ProviderStatus }) {
           : "Never synced."}
       </p>
 
+      {/* There is no manual sync button anywhere, because there is no manual sync — the
+          reading happens inside a tab on the site. Saying so is the difference between an
+          honest instruction and a page that looks like it forgot a button. */}
+      <p className="mt-1.5 text-xs text-ink-subtle">
+        {status.lastFullSyncAt
+          ? `Syncing runs inside a ${label.host} tab. Open one to pick up anything new.`
+          : `Open ${label.host} signed in to backfill your history. The first sync takes a minute or two.`}
+      </p>
+
       {status.lastError ? (
         <p className="mt-1.5 rounded-md bg-danger-soft px-2 py-1 text-xs text-danger">
           {status.lastError}
         </p>
       ) : null}
 
-      {!status.connected ? (
-        <ButtonLink
-          className="mt-2"
-          size="sm"
-          variant="secondary"
-          href={label.url}
-          target="_blank"
-          rel="noreferrer"
-          icon={<ExternalIcon />}
-        >
-          Open {label.name}
-        </ButtonLink>
-      ) : null}
+      <ButtonLink
+        className="mt-2"
+        size="sm"
+        variant={status.lastFullSyncAt ? "secondary" : "primary"}
+        href={label.url}
+        target="_blank"
+        rel="noreferrer"
+        icon={<ExternalIcon />}
+      >
+        {status.lastFullSyncAt ? `Sync in ${label.host}` : `Connect ${label.name}`}
+      </ButtonLink>
     </Card>
   );
 }
