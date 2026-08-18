@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_SETTINGS,
-  PRIVACY_FORCED_REACCEPT_VERSION,
   PRIVACY_POLICY_VERSION,
+  type PrivacyRevision,
   SETTINGS_VERSION,
   type Settings,
   hasAcceptedPrivacy,
@@ -321,49 +321,60 @@ describe("privacy consent", () => {
   });
 });
 
-describe("privacy re-prompt opt-out", () => {
-  const accepted = (version: number, auto: boolean) =>
+describe("carrying an acceptance across revisions", () => {
+  const accepted = (version: number) =>
     withDefaults({
       privacyAcceptedAt: 1_786_929_717_000,
       privacyAcceptedVersion: version,
-      privacyAutoAcceptUpdates: auto,
     } as Partial<Settings>);
 
-  it("is off unless it was stored", () => {
-    expect(withDefaults(undefined).privacyAutoAcceptUpdates).toBe(false);
-    expect(withDefaults({} as Partial<Settings>).privacyAutoAcceptUpdates).toBe(false);
+  // Stands in for a future policy history. Only one revision exists today, so the
+  // interesting cases have to be supplied rather than waited for.
+  const revision = (version: number, carriesForward?: boolean): PrivacyRevision => ({
+    version,
+    effective: `revision ${version}`,
+    sha256: `sha-${version}`,
+    ...(carriesForward === undefined ? {} : { carriesForward }),
   });
 
-  it("carries an acceptance over a later revision", () => {
-    // Accepted revision 2; the policy has since moved to 3 without widening what is read,
-    // so the forced threshold stays where it was.
-    expect(hasAcceptedPrivacy(accepted(2, true), 3, 1)).toBe(true);
+  it("doesn't ask again for a revision declared minor", () => {
+    const history = [revision(1), revision(2, true)];
+    expect(hasAcceptedPrivacy(accepted(1), history)).toBe(true);
   });
 
-  it("re-asks over a later revision when the box was left unticked", () => {
-    expect(hasAcceptedPrivacy(accepted(2, false), 3, 1)).toBe(false);
+  it("asks for a revision that was not declared minor", () => {
+    // Omitting `carriesForward` is the whole safety property: forgetting to think about a
+    // revision asks everybody rather than silently skipping them.
+    const history = [revision(1), revision(2)];
+    expect(hasAcceptedPrivacy(accepted(1), history)).toBe(false);
   });
 
-  it("still re-asks for a revision that widens what is read", () => {
-    // Revision 3 expands the promise, so it raised the forced threshold to itself. The
-    // tick does not cover it.
-    expect(hasAcceptedPrivacy(accepted(2, true), 3, 3)).toBe(false);
+  it("won't let a later minor revision smuggle a major one past", () => {
+    // Accepted 1, then 2 changed something real and 3 only fixed wording. Checking every
+    // revision in between is what catches this; a single threshold would not.
+    const history = [revision(1), revision(2), revision(3, true)];
+    expect(hasAcceptedPrivacy(accepted(1), history)).toBe(false);
   });
 
-  it("never manufactures a first acceptance", () => {
-    // The tick can only ever be stored alongside an acceptance, but if it somehow arrives
-    // on its own it must not stand in for one.
-    const forged = { privacyAutoAcceptUpdates: true } as Partial<Settings>;
-    expect(hasAcceptedPrivacy(withDefaults(forged))).toBe(false);
+  it("carries across a run of minor revisions", () => {
+    const history = [revision(1), revision(2, true), revision(3, true)];
+    expect(hasAcceptedPrivacy(accepted(1), history)).toBe(true);
   });
 
-  it("reads the live constants when no revisions are passed", () => {
-    expect(hasAcceptedPrivacy(accepted(PRIVACY_POLICY_VERSION, false))).toBe(true);
-    expect(hasAcceptedPrivacy(accepted(PRIVACY_FORCED_REACCEPT_VERSION - 1, true))).toBe(false);
+  it("never carries a first acceptance that was never given", () => {
+    // A minor first revision must not stand in for an acceptance nobody made.
+    expect(hasAcceptedPrivacy(withDefaults(undefined), [revision(1, true)])).toBe(false);
   });
 
-  it("survives a round trip", () => {
-    const once = withDefaults({ privacyAutoAcceptUpdates: true } as Partial<Settings>);
-    expect(withDefaults(once).privacyAutoAcceptUpdates).toBe(true);
+  it("reads the live revisions when none are passed", () => {
+    expect(hasAcceptedPrivacy(accepted(PRIVACY_POLICY_VERSION))).toBe(true);
+    expect(hasAcceptedPrivacy(accepted(PRIVACY_POLICY_VERSION - 1))).toBe(false);
+  });
+
+  it("forgets a stored opt-out from the build that offered one", () => {
+    // Shipped briefly as `privacyAutoAcceptUpdates`. The decision is ours per revision
+    // now, so a stale stored preference must not survive the merge and mean anything.
+    const stale = { privacyAcceptedVersion: 1, privacyAutoAcceptUpdates: true } as Partial<Settings>;
+    expect(withDefaults(stale)).not.toHaveProperty("privacyAutoAcceptUpdates");
   });
 });

@@ -17,17 +17,23 @@ storage.
 If you do not agree, do not accept — uninstall the extension and nothing of yours will have
 been touched.
 
-If this policy changes materially, the extension will ask you to accept the new version
-before continuing. Continuing to use LeetSpacer after accepting a revision means you agree
-to that revision.
+**If this policy changes in a way that affects what LeetSpacer does with your data, the
+extension stops and asks you to accept the new version before it reads anything else.** It
+does not wait for you to notice, and it does not carry your previous acceptance over.
+That always includes a revision that:
 
-The consent screen offers a **"Don't ask me again when the policy changes"** checkbox. It
-is off unless you turn it on. With it on, a later revision is accepted on your behalf and
-the extension keeps running without stopping to ask — *except* where the revision widens
-what LeetSpacer reads: reading something new, reading it from somewhere new, or sending
-anything off your device. Those are always shown to you and always need a fresh
-acceptance, whatever the checkbox says. You can change your mind the next time the screen
-appears; unticking it there withdraws the standing permission.
+- reads something new, reads it from somewhere new, or sends anything off your device;
+- reduces your control over what is already stored; or
+- changes who publishes or controls LeetSpacer.
+
+A revision that changes none of those — a clarification, a correction, a rewording — is
+published as a minor one and does not interrupt you. The effective date above still
+changes, and it is still listed in [`CHANGELOG.md`](CHANGELOG.md).
+
+Which of the two a revision is, is recorded in the source alongside the date it took
+effect, and this file is checksummed against that record: it cannot be edited without a
+revision being declared, and the build fails if anyone tries. The list is
+`PRIVACY_REVISIONS` in `packages/core/src/settings.ts`.
 
 You can withdraw consent at any time by uninstalling the extension, which deletes
 everything it holds. See **Your control over your data** below for narrower options.
@@ -138,10 +144,10 @@ knowingly collect anything from anyone, of any age.
 
 ## Changes to this policy
 
-Material changes will be published here, the effective date above will change, and the
-extension will ask you to accept the new version — unless you have ticked "Don't ask me
-again" and the change does not widen what is read, as described under **Your acceptance**.
-The full history of this file is public.
+Changes will be published here and the effective date above will change. Anything
+affecting what LeetSpacer does with your data stops the extension until you accept it, as
+described under **Your acceptance**. Every revision, its date and whether it was minor are
+listed in [`CHANGELOG.md`](CHANGELOG.md), and the full history of this file is public.
 
 ## No warranty
 

@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  # Only main on push. Branch pushes are covered by pull_request, and matching both here
+  # runs every PR commit twice.
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 22.13 is pnpm 11's floor — it reaches for node:sqlite, which Node 20 lacks.
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      # Includes the PRIVACY.md checksum guard, so a policy edit that ships without a
+      # declared revision fails here as well as at `pnpm zip`.
+      - run: pnpm test

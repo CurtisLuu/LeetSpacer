@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
 
 import { Button } from "./button";
-import { Checkbox } from "./field";
 import { Logo } from "./logo";
 import { useConsent } from "../lib/use-consent";
 
@@ -20,10 +18,6 @@ const POLICY_URL = "https://github.com/CurtisLuu/LeetSpacer/blob/main/PRIVACY.md
  */
 export function ConsentGate({ children }: { children: ReactNode }) {
   const { accepted, accept } = useConsent();
-  // Unticked by default. A pre-ticked box would collect the standing permission from
-  // people who never decided to give it, which is the whole failure mode this setting
-  // has to avoid.
-  const [skipUpdates, setSkipUpdates] = useState(false);
 
   // `null` means we haven't looked yet. Rendering the gate during that moment would
   // flash a consent screen at someone who accepted months ago.
@@ -58,20 +52,7 @@ export function ConsentGate({ children }: { children: ReactNode }) {
             Nothing is read until you accept.
           </p>
 
-          <Checkbox
-            className="mt-4"
-            checked={skipUpdates}
-            onChange={(event) => setSkipUpdates(event.currentTarget.checked)}
-            label="Don't ask me again when the policy changes"
-            hint="Minor revisions are accepted for you. Anything that widens what LeetSpacer reads is still shown here first."
-          />
-
-          <Button
-            className="mt-4"
-            variant="primary"
-            block
-            onClick={() => accept(skipUpdates)}
-          >
+          <Button className="mt-4" variant="primary" block onClick={accept}>
             Accept and continue
           </Button>
 
@@ -83,6 +64,15 @@ export function ConsentGate({ children }: { children: ReactNode }) {
           >
             Read the privacy policy
           </a>
+
+          {/* Says when this comes back, so accepting doesn't feel like signing away the
+              right to be told. There is no "don't show me again" to offer: accepting is
+              already that, and what brings the screen back is our call about a revision,
+              not a preference anyone can set here. */}
+          <p className="mt-3 text-center text-xs text-ink-subtle">
+            You won't see this again unless the privacy policy changes what LeetSpacer
+            does with your data.
+          </p>
         </div>
       </div>
     </>

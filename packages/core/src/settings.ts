@@ -82,23 +82,11 @@ export interface Settings {
    * carries on, and a promise in that document that the code doesn't keep is worse than
    * no promise. Bumping `PRIVACY_POLICY_VERSION` is what keeps it.
    *
-   * Left at whatever revision was actually shown, even once a later one is carried
-   * forward by `privacyAutoAcceptUpdates`. Advancing it would record an acceptance of a
-   * document the user never saw, which is a worse record than an honest older one.
+   * Left at whatever revision was actually shown, even once a later minor one is carried
+   * forward. Advancing it would record an acceptance of a document the user never saw,
+   * which is a worse record than an honest older one.
    */
   privacyAcceptedVersion: number | null;
-  /**
-   * Whether the user asked not to be re-prompted when the policy is revised.
-   *
-   * Set from the checkbox on the consent gate, so it is only ever recorded alongside a
-   * real acceptance — there is no path to this being true without the user having read
-   * and accepted the policy at least once.
-   *
-   * It does not carry every revision forward. A revision that expands what is read is
-   * still presented, because pre-consent to a document nobody has written yet is not
-   * consent to whatever it turns out to say. See `PRIVACY_FORCED_REACCEPT_VERSION`.
-   */
-  privacyAutoAcceptUpdates: boolean;
   /** Which track the UI is currently showing. Set by the selector in the side panel. */
   activeTrack: TrackId;
   /**
@@ -153,40 +141,78 @@ const LEETCODE_TRACK: TrackSettings = {
  */
 export const SETTINGS_VERSION = 3;
 
-/**
- * The revision of the privacy policy in `PRIVACY.md`.
- *
- * Bump it whenever that document changes materially — what is read, where it goes, or who
- * can see it. Doing so re-presents the policy and stops all reading until it is accepted
- * again, which is what the document says will happen.
- */
-export const PRIVACY_POLICY_VERSION = 1;
+/** One published revision of `PRIVACY.md`. */
+export interface PrivacyRevision {
+  version: number;
+  /** The `Effective` line at the top of `PRIVACY.md` when this revision shipped. */
+  effective: string;
+  /**
+   * sha256 of `PRIVACY.md` as it stood at this revision.
+   *
+   * Kept here rather than in a build script so that a revision is one literal in one
+   * place. `privacy-policy.test.ts` checks the file against it, and `pnpm zip` runs the
+   * tests, so the policy cannot be edited and shipped without a revision being declared.
+   */
+  sha256: string;
+  /**
+   * Whether an earlier acceptance still stands after this revision, so nobody is asked
+   * again for it.
+   *
+   * This is our call to make per revision, not the user's — which is how everyone else
+   * does it, and the only workable way: a user asked to pre-approve a revision would be
+   * deciding about a document they have not read.
+   *
+   * Omit it and the answer is no: everyone is asked again. That is the direction to fail
+   * in, because forgetting to think about a revision is exactly when you most want the
+   * user asked. Set it to `true` only for a revision that changes nothing about what
+   * LeetSpacer does with someone's data — wording, formatting, clarification.
+   *
+   * Never set it on a revision that reads more, reads from somewhere new, sends anything
+   * off the device, narrows what the user can export or delete, or changes who publishes
+   * the extension. `PRIVACY.md` promises those always stop the extension.
+   */
+  carriesForward?: boolean;
+}
 
 /**
- * The earliest revision that everyone must accept in person, `privacyAutoAcceptUpdates`
- * or not.
+ * Every published revision of `PRIVACY.md`, oldest first.
  *
- * Raise it to the new `PRIVACY_POLICY_VERSION` whenever a revision *expands* the promise
- * — more read, read from somewhere new, or leaving the device at all. Those are exactly
- * the changes someone could not have anticipated when they ticked "don't ask me again",
- * so the tick doesn't cover them.
- *
- * Leave it alone for revisions that only narrow the promise or clarify wording. Those are
- * what the checkbox exists to skip.
+ * Appending an entry is the whole procedure for a policy change: it moves
+ * `PRIVACY_POLICY_VERSION`, records the effective date, and states whether the revision
+ * can be carried forward — the three things that used to be separate and could drift.
  */
-export const PRIVACY_FORCED_REACCEPT_VERSION = 1;
+export const PRIVACY_REVISIONS: readonly PrivacyRevision[] = [
+  {
+    version: 1,
+    effective: "17 August 2026",
+    sha256: "810d201cb1188ae3a4adb9e36e5f27f993f24fdbf3442dce830a730aaf06c2fc",
+  },
+];
+
+/** The newest declared revision. */
+function currentRevision(revisions: readonly PrivacyRevision[]): PrivacyRevision {
+  const latest = revisions[revisions.length - 1];
+  if (latest === undefined) throw new Error("PRIVACY_REVISIONS must not be empty.");
+  return latest;
+}
+
+/**
+ * The revision of the privacy policy in `PRIVACY.md` that this build ships.
+ *
+ * Derived rather than written down twice — the list is the source of truth.
+ */
+export const PRIVACY_POLICY_VERSION = currentRevision(PRIVACY_REVISIONS).version;
 
 /**
  * Has this install accepted the policy as it currently stands?
  *
- * The two revision numbers are parameters rather than read straight from the constants so
- * the version arithmetic can be exercised while both constants still sit at 1 — the same
- * reason `seedCards` takes `now`. Callers pass neither.
+ * `revisions` is a parameter rather than read straight from the constant so the version
+ * arithmetic can be exercised while only one revision exists — the same reason
+ * `seedCards` takes `now`. Callers pass nothing.
  */
 export function hasAcceptedPrivacy(
   settings: Settings,
-  currentVersion: number = PRIVACY_POLICY_VERSION,
-  forcedReacceptVersion: number = PRIVACY_FORCED_REACCEPT_VERSION,
+  revisions: readonly PrivacyRevision[] = PRIVACY_REVISIONS,
 ): boolean {
   const accepted = settings.privacyAcceptedVersion;
 
@@ -194,13 +220,12 @@ export function hasAcceptedPrivacy(
   // first because the carry-forward below must never manufacture consent from scratch.
   if (accepted === null) return false;
 
-  if (accepted === currentVersion) return true;
+  if (accepted === currentRevision(revisions).version) return true;
 
-  // Accepted something older than the last expanding revision: that revision changed what
-  // they were agreeing to, so it gets presented regardless of the checkbox.
-  if (accepted < forcedReacceptVersion) return false;
-
-  return settings.privacyAutoAcceptUpdates;
+  // Every revision published since the one they accepted has to be carryable. Checking
+  // all of them rather than a single threshold means a major revision can't be smuggled
+  // past by a later minor one, and nothing has to be remembered when the next one ships.
+  return revisions.every((r) => r.version <= accepted || r.carriesForward === true);
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -212,7 +237,6 @@ export const DEFAULT_SETTINGS: Settings = {
   tracks: { leetcode: LEETCODE_TRACK, neetcode: NEETCODE_TRACK },
   privacyAcceptedAt: null,
   privacyAcceptedVersion: null,
-  privacyAutoAcceptUpdates: false,
   activeTrack: "neetcode",
   problemLinkTarget: "neetcode",
 };
@@ -334,9 +358,6 @@ export function withDefaults(raw: Partial<Settings> | undefined): Settings {
     // Never defaulted to "accepted": consent that the code assumes is not consent.
     privacyAcceptedAt: stored?.privacyAcceptedAt ?? null,
     privacyAcceptedVersion: stored?.privacyAcceptedVersion ?? null,
-    // Same reasoning as the two above: never defaulted on, only ever stored because the
-    // user ticked the box.
-    privacyAutoAcceptUpdates: stored?.privacyAutoAcceptUpdates ?? false,
     activeTrack: stored?.activeTrack ?? DEFAULT_SETTINGS.activeTrack,
     problemLinkTarget: stored?.problemLinkTarget ?? DEFAULT_SETTINGS.problemLinkTarget,
   };

@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "pnpm --filter @lcs/extension dev",
     "build": "pnpm -r --if-present build",
-    "zip": "pnpm --filter @lcs/extension zip",
+    "zip": "pnpm typecheck && pnpm test && pnpm --filter @lcs/extension zip",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
     "catalog:build": "pnpm --filter @lcs/catalog build:data",
@@ -15,6 +15,7 @@
     "import:neetcode": "pnpm --filter @lcs/importers import:neetcode"
   },
   "engines": {
-    "node": ">=20"
-  }
+    "node": ">=22.13"
+  },
+  "packageManager": "pnpm@11.22.0"
 }

@@ -6,7 +6,8 @@ What changed in each released version of LeetSpacer.
 
 First public release. Set the date here when it ships.
 
-Privacy policy revision 1. Nothing to re-accept: this is the first one.
+Privacy policy revision 1, effective 17 August 2026. Nothing to re-accept: this is the
+first one.
 
 ### Scheduling
 
@@ -48,9 +49,16 @@ Privacy policy revision 1. Nothing to re-accept: this is the first one.
 
 - Nothing is read from either site until the privacy policy is accepted. The gate covers
   every surface and blocks the reading, not just the interface.
-- A "Don't ask me again when the policy changes" option on that gate. Off unless you turn
-  it on; it carries your acceptance over minor revisions, and never over one that widens
-  what LeetSpacer reads.
+- A policy revision that changes what LeetSpacer does with your data stops the extension
+  and asks you to accept it. One that only clarifies wording is published as minor and
+  doesn't interrupt you.
 - Everything stays in IndexedDB on your machine. No server, no analytics, nothing
   transmitted.
 - Export and import your data as JSON.
+
+### Development
+
+- `pnpm zip` runs typecheck and tests before packaging, and `PRIVACY.md` is checksummed
+  against its declared revision — the policy cannot be changed and shipped without users
+  being asked to accept it.
+- CI runs typecheck and tests on every push and pull request.

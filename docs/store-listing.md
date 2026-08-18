@@ -195,9 +195,13 @@ swap your username if it appears.
 ## Packaging
 
 ```sh
-pnpm typecheck && pnpm test   # sanity check
 pnpm zip
 ```
+
+`zip` runs `typecheck` and the tests first and stops on a failure, so there is no separate
+sanity check to remember. One of those tests pins `PRIVACY.md` to its declared revision —
+if you edited the policy, the build stops with the exact entry to append to
+`PRIVACY_REVISIONS`. See **Changing the privacy policy** below.
 
 The artifact lands at `apps/extension/.output/leetspacer-1.0.0-chrome.zip`. Upload that
 file, not the unpacked folder.
@@ -217,6 +221,30 @@ Note that 48 and 128 render the mark faithfully — pale face, purple deck behin
 and 32 invert to a filled accent card with light braces. The pale face is invisible against
 a white browser toolbar, and by 16px the braces are thinner than a pixel. The store listing
 uses the 128, so what a reviewer sees is the real artwork.
+
+---
+
+## Changing the privacy policy
+
+`PRIVACY.md` is pinned by checksum to an entry in `PRIVACY_REVISIONS`
+(`packages/core/src/settings.ts`). Edit the policy and `pnpm zip` fails until a revision is
+declared, so this cannot be forgotten on the way to a submission — which matters, because
+the policy promises a revision is presented to the user before the extension carries on
+reading, and nothing else would notice a broken promise.
+
+1. Edit `PRIVACY.md` and move its **Effective** date.
+2. Run `pnpm test`. It fails and prints the entry to append, checksum included.
+3. Append it. Set `carriesForward: true` **only** if the revision changes nothing about
+   what LeetSpacer does with someone's data — wording, formatting, clarification. Leave it
+   off and every user re-accepts, which is the right way to be wrong. This is our call per
+   revision; there is no user-facing setting that waives it.
+4. Bump `apps/extension/package.json`, add the `CHANGELOG.md` entry, refresh WHAT'S NEW.
+5. `pnpm zip` and submit.
+
+Users land on the new build through Chrome's normal auto-update, within hours. On next
+open the consent gate returns and reading is already halted — `background.ts` refuses the
+sync claim and drops any events that arrive anyway. Stored schedules and history are
+untouched; the gate covers the interface, it does not clear anything.
 
 ---
 
