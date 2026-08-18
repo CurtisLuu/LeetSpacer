@@ -2,13 +2,6 @@
 
 What changed in each released version of LeetSpacer.
 
-Versions follow the `version` in `apps/extension/package.json`, which is what WXT writes
-into the manifest and what the store displays.
-
-Privacy policy revisions are listed here too. [`PRIVACY.md`](PRIVACY.md) promises its
-history is public, and "read the git log" is only public in a narrow sense — a policy
-change is a thing a user should be able to find without a checkout.
-
 ## 1.0.0 — unreleased
 
 First public release. Set the date here when it ships.
