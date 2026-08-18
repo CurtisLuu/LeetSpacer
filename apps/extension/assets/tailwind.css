@@ -189,8 +189,8 @@
 }
 
 html {
-  /* Lets the UA theme native widgets — checkboxes, range tracks, date pickers,
-     scrollbars — instead of leaving light controls on a dark panel. */
+  /* Lets the UA theme native widgets — checkboxes, range tracks, date pickers —
+     instead of leaving light controls on a dark panel. */
   color-scheme: light dark;
 }
 
@@ -225,9 +225,16 @@ body {
   background: var(--color-accent-soft);
 }
 
+/* No scrollbars anywhere. Everything still scrolls — wheel, trackpad, touch, arrows,
+   Page Up/Down — only the bar itself is gone. The side panel is narrow enough that a
+   gutter is a real fraction of the width, and it appears and disappears as the queue
+   changes length, which shifts the layout under the reader. */
 * {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-strong) transparent;
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
