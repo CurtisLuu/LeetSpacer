@@ -9,6 +9,7 @@ import { cx } from "./cx";
 export * from "./badge";
 export * from "./button";
 export * from "./callout";
+export * from "./consent-gate";
 export * from "./cx";
 export * from "./field";
 export * from "./grade-button";
