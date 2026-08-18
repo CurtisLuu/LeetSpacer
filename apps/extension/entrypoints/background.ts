@@ -8,6 +8,7 @@ import {
   TRACK_IDS,
   createScheduler,
   distributeDueDates,
+  hasAcceptedPrivacy,
   ingestEvents,
   seedMissingCards,
   withMinimumLock,
@@ -89,8 +90,8 @@ export default defineBackground(() => {
       lastFailure.delete(provider);
       if (username) await patchProvider(provider, { username });
 
-      const { privacyAcceptedAt } = await (await getStore()).settings.get();
-      return { ack: true, consented: privacyAcceptedAt !== null };
+      const settings = await (await getStore()).settings.get();
+      return { ack: true, consented: hasAcceptedPrivacy(settings) };
     },
 
     "events:ingest": async ({ provider, events, complete }) => {
@@ -98,7 +99,7 @@ export default defineBackground(() => {
       const store = await getStore();
 
       // The last line of defence: nothing is written before consent, whatever sent it.
-      if ((await store.settings.get()).privacyAcceptedAt === null) {
+      if (!hasAcceptedPrivacy(await store.settings.get())) {
         return { received: events.length, inserted: 0, updatedProblems: [] };
       }
 
@@ -129,7 +130,7 @@ export default defineBackground(() => {
 
       // Belt and braces. The content scripts stop before they get here, but a sync path
       // added later shouldn't have to remember to check.
-      if (settings.privacyAcceptedAt === null) {
+      if (!hasAcceptedPrivacy(settings)) {
         return { mode: null, since: 0, reason: "not-accepted" } as const;
       }
       if (!state.enabled) return { mode: null, since: 0, reason: "disabled" } as const;

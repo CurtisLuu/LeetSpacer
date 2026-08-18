@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { PRIVACY_POLICY_VERSION, hasAcceptedPrivacy } from "@lcs/core";
+
 import { send } from "./messaging.js";
 
 /**
@@ -18,7 +20,7 @@ export function useConsent(): {
     let cancelled = false;
     void send("settings:get", {})
       .then((settings) => {
-        if (!cancelled) setAccepted(settings.privacyAcceptedAt !== null);
+        if (!cancelled) setAccepted(hasAcceptedPrivacy(settings));
       })
       .catch(() => {
         // Unknown is not consent. Holding is the safe direction.
@@ -31,7 +33,9 @@ export function useConsent(): {
 
   const accept = useCallback(() => {
     setAccepted(true);
-    void send("settings:update", { patch: { privacyAcceptedAt: Date.now() } }).catch(() => {
+    void send("settings:update", {
+      patch: { privacyAcceptedAt: Date.now(), privacyAcceptedVersion: PRIVACY_POLICY_VERSION },
+    }).catch(() => {
       setAccepted(false);
     });
   }, []);

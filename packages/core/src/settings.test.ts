@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_SETTINGS, SETTINGS_VERSION, type Settings, withDefaults } from "./settings.js";
+import {
+  DEFAULT_SETTINGS,
+  PRIVACY_POLICY_VERSION,
+  SETTINGS_VERSION,
+  type Settings,
+  hasAcceptedPrivacy,
+  withDefaults,
+} from "./settings.js";
 
 describe("withDefaults", () => {
   it("fills in everything from nothing", () => {
@@ -260,7 +267,34 @@ describe("the shared NeetCode sync cursor", () => {
 
 describe("privacy consent", () => {
   it("starts unaccepted", () => {
+    expect(hasAcceptedPrivacy(withDefaults(undefined))).toBe(false);
     expect(withDefaults(undefined).privacyAcceptedAt).toBeNull();
+  });
+
+  it("re-asks when the policy revision moves", () => {
+    // The policy itself promises this. A promise in that document the code doesn't keep
+    // is worse than no promise.
+    const stale = {
+      privacyAcceptedAt: 1_786_929_717_000,
+      privacyAcceptedVersion: PRIVACY_POLICY_VERSION - 1,
+    } as Partial<Settings>;
+
+    expect(hasAcceptedPrivacy(withDefaults(stale))).toBe(false);
+  });
+
+  it("accepts the current revision", () => {
+    const current = {
+      privacyAcceptedAt: 1_786_929_717_000,
+      privacyAcceptedVersion: PRIVACY_POLICY_VERSION,
+    } as Partial<Settings>;
+
+    expect(hasAcceptedPrivacy(withDefaults(current))).toBe(true);
+  });
+
+  it("treats a timestamp with no revision as unaccepted", () => {
+    // Written by a build that predates versioning, so what was agreed to is unknown.
+    const ambiguous = { privacyAcceptedAt: 1_786_929_717_000 } as Partial<Settings>;
+    expect(hasAcceptedPrivacy(withDefaults(ambiguous))).toBe(false);
   });
 
   it("is never inferred for an existing install", () => {
