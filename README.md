@@ -159,6 +159,64 @@ declined sync now reports *why* rather than returning a bare null, for the same 
 Note that the LeetCode adapter has never been through any of this. It works, but it was
 written the same way — from a reading of endpoints, with the environment assumed.
 
+## Terms and limitations
+
+Read on 17 August 2026. Not legal advice — recorded so the position is known rather than
+assumed, and so the next person doesn't have to rediscover it.
+
+### LeetCode
+
+Their [Terms](https://leetcode.com/terms/) prohibit automated access in broad language:
+
+> Activities such as "crawling," "scraping," or "spidering" any part of the Service … are
+> strictly forbidden.
+
+There is no exception for reading your own data. LeetSpacer walks `/api/submissions/`
+programmatically, which a broad reading covers. The argument against is that this is one
+user reading their own account from their own signed-in browser at roughly the rate a
+person browsing would generate — but the clause does not say that, so it is a grey area
+entered knowingly rather than a settled one.
+
+Two adjacent restrictions are satisfied deliberately, and should stay satisfied:
+
+- *"any process that operates while you are not logged into the platform"* — the sync only
+  runs inside a signed-in tab, never in the background worker.
+- *"placing an undue load on its infrastructure"* — every request goes through
+  `createThrottle` at roughly one per second with jitter, and the history walk is capped.
+
+Loosening either of those turns an arguable position into an indefensible one.
+
+### NeetCode
+
+Their [Terms](https://neetcode.io/terms) contain no anti-scraping or anti-automation
+clause, which makes the activity walk materially safer than its LeetCode counterpart. One
+clause does touch what is shipped here:
+
+> You shall not distribute, publish, transmit, modify, display or create derivative works
+> from material obtained with this service.
+
+`packages/catalog/data/neetcode-slugs.json` maps LeetCode slugs to NeetCode's, and is
+derived from their `sitemap.xml` — a file published for machines to read, with a
+`robots.txt` that disallows nothing — plus a 73-entry rename table taken from their app
+bundle. 514 of its 588 entries are identity mappings.
+
+Read plainly this is a contract term rather than a copyright one, and the distinction
+matters. The file is factual data with no creative selection or arrangement, which is thin
+ground for a copyright claim and therefore for any takedown mechanism that depends on one.
+The realistic remedy for a terms breach is that NeetCode asks, and the map is removed or
+swapped for LeetCode links. Worth knowing, not worth losing sleep over.
+
+Building the map inside the extension instead was considered and rejected on measurement:
+the rename table sits in chunk 84 of 152 content-hashed bundles, and the hashes change on
+every deploy, so there is nothing to cache. Finding it costs about 6 MB per run and up to
+13 MB if it moves. Doing that on every install would put orders of magnitude more load on
+NeetCode than shipping a 32 KB file — worse for them by the measure they would actually
+care about.
+
+Asking NeetCode is a five-minute email that settles it permanently, and the pitch is
+favourable: the map makes their site the default destination for every problem link in the
+extension.
+
 ## Layout
 
 | Path | What lives there |
