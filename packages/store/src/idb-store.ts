@@ -388,9 +388,9 @@ export function createIdbStore(db: LcsDatabase): Store {
         return withDefaults((await db.get("kv", SETTINGS_KEY)) as Partial<Settings> | undefined);
       },
       async update(patch) {
-        // Read and write inside one transaction. Four contexts hold their own connection
-        // to this database — the background worker, the side panel, the popup, the
-        // options page — and a read-then-write across two transactions lets the options
+        // Read and write inside one transaction. Three contexts hold their own connection
+        // to this database — the background worker, the side panel, the options page —
+        // and a read-then-write across two transactions lets the options
         // page's save land on top of a provider update the background made in between,
         // silently undoing it. IndexedDB serializes readwrite transactions on a store, so
         // doing both here is what makes the update atomic rather than merely quick.

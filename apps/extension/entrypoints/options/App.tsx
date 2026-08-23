@@ -279,16 +279,23 @@ export function App() {
         <fieldset className="space-y-2 rounded-xl border border-border bg-surface-raised p-3">
           <RadioRow
             name="problemLinkTarget"
+            checked={settings.problemLinkTarget === "track"}
+            label="Match the track"
+            hint="The NeetCode track opens neetcode.io, the LeetCode track opens leetcode.com. Problems NeetCode doesn't host fall back to LeetCode."
+            onSelect={() => void patch({ problemLinkTarget: "track" })}
+          />
+          <RadioRow
+            name="problemLinkTarget"
             checked={settings.problemLinkTarget === "neetcode"}
-            label="NeetCode"
-            hint="Opens neetcode.io, where the video walkthrough and editorial are. Problems NeetCode doesn't host fall back to LeetCode."
+            label="Always NeetCode"
+            hint="Both tracks open neetcode.io, where the video walkthrough and editorial are. Problems NeetCode doesn't host fall back to LeetCode."
             onSelect={() => void patch({ problemLinkTarget: "neetcode" })}
           />
           <RadioRow
             name="problemLinkTarget"
             checked={settings.problemLinkTarget === "leetcode"}
-            label="LeetCode"
-            hint="Opens leetcode.com, which has every problem."
+            label="Always LeetCode"
+            hint="Both tracks open leetcode.com, which has every problem."
             onSelect={() => void patch({ problemLinkTarget: "leetcode" })}
           />
         </fieldset>

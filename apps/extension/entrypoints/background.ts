@@ -1,4 +1,5 @@
 import {
+  type ProblemLinkTarget,
   type ProviderId,
   type ReviewCard,
   type Settings,
@@ -9,6 +10,7 @@ import {
   hasAcceptedPrivacy,
   ingestEvents,
   isStorageFull,
+  linkTargetFor,
   rebuildTrackSchedule,
   seedMissingCards,
   withMinimumLock,
@@ -37,8 +39,8 @@ const INCREMENTAL_INTERVAL_MS = 15 * 60 * 1000;
  * How recently a tab on each site checked in, and how the last sync ended.
  *
  * Persisted rather than held in module state. MV3 evicts this worker after about thirty
- * seconds idle, and the previous in-memory `Set` went with it — so the popup said "not
- * connected" and the provider card said "no tab open" while a leetcode.com tab sat there
+ * seconds idle, and the previous in-memory `Set` went with it — so the side panel said
+ * "not connected" and the provider card said "no tab open" while a leetcode.com tab sat
  * syncing, and the explanation for a real failure vanished on the next poll.
  *
  * Only ever written after consent: a greeting that arrives before the policy is accepted
@@ -101,10 +103,19 @@ const syncing = new Set<ProviderId>();
 const lastAttemptAt = new Map<ProviderId, number>();
 
 export default defineBackground(() => {
-  // No `setPanelBehavior({ openPanelOnActionClick: true })` here. There is a popup
-  // entrypoint, so the manifest carries `action.default_popup`, and the popup always wins
-  // the toolbar click — the call was inert and its comment claimed otherwise. The popup
-  // opens the side panel itself.
+  // Clicking the toolbar icon opens the side panel, with nothing in between.
+  //
+  // This only works because there is no popup entrypoint any more: `action.default_popup`
+  // wins the click outright, and the panel behaviour would be inert beside it. The popup
+  // that used to sit here showed two counts the badge and the panel already carry, plus a
+  // button to open the panel — a click to earn a click.
+  //
+  // Chrome persists this setting, so a profile that installed an older build keeps the
+  // popup's behaviour until this runs; calling it on every worker start rather than on
+  // install is what makes the upgrade take effect.
+  void browser.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((error: unknown) => console.error("[lcs] side panel behavior", error));
 
   // Open the walkthrough once, on install only.
   //
@@ -420,7 +431,7 @@ export default defineBackground(() => {
 async function toReviewItems(
   cards: readonly ReviewCard[],
   track: TrackId,
-  linkTarget: ProviderId,
+  linkTarget: ProblemLinkTarget,
   now: number,
 ): Promise<ReviewItem[]> {
   const store = await getStore();
@@ -432,10 +443,14 @@ async function toReviewItems(
   // difficulty, and tags. Falls back gracefully for anything not in it.
   const [catalog, links] = await Promise.all([getCatalog().catch(() => null), getProblemLinks()]);
 
+  // Resolved once for the batch, not per card: every card here belongs to one track, so
+  // the answer cannot differ between them.
+  const prefer = linkTargetFor(linkTarget, track);
+
   return cards.map((card) => {
     const state = byslug.get(card.slug);
     const problem = catalog?.bySlug(card.slug);
-    const link = links.resolve(card.slug, linkTarget);
+    const link = links.resolve(card.slug, prefer);
     return {
       slug: card.slug,
       title: problem?.title ?? titleFromSlug(card.slug),
@@ -480,9 +495,10 @@ async function getCatalogStats(): Promise<{ count: number; generatedAt: string |
 /**
  * The status every surface polls, memoised for a moment.
  *
- * Three surfaces poll this — the popup every two seconds, the side panel every five, the
- * options page on open — and they overlap constantly. The window is short enough that
- * nothing visibly lags and any write clears it outright, via `refreshBadge`.
+ * Three surfaces poll this — the side panel every five seconds, the welcome page while
+ * it waits for a first sync, the options page on open — and they overlap constantly. The
+ * window is short enough that nothing visibly lags and any write clears it outright, via
+ * `refreshBadge`.
  */
 let statusCache: { at: number; value: SyncStatus } | null = null;
 const STATUS_TTL_MS = 1_000;

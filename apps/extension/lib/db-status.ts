@@ -2,7 +2,8 @@
  * Whether this context's database connection has been retired.
  *
  * Split out from `lib/store.ts` so the surfaces that only talk to the background — the
- * popup, for one — can subscribe without pulling the IndexedDB layer into their bundle.
+ * welcome page, for one — can subscribe without pulling the IndexedDB layer into their
+ * bundle.
  *
  * The situation it describes: another context opened the database at a newer version, so
  * every older connection was asked to close and did. Code in this context is then holding

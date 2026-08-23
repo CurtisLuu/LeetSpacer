@@ -81,8 +81,8 @@ WHAT YOU GET
 • FSRS scheduling — the algorithm behind modern Anki — with a tunable retention target
 • Real solve dates and attempt counts from your LeetCode history
 • Backlog spreading, so importing years of history doesn't dump 400 reviews on day one
-• Problems open on NeetCode by default, where the video walkthrough is, and fall back to
-  LeetCode for anything NeetCode doesn't host
+• Problems open on the site whose track you're reviewing — NeetCode problems on NeetCode,
+  where the video walkthrough is, LeetCode problems on LeetCode
 • Export and import your data as JSON
 
 PRIVACY

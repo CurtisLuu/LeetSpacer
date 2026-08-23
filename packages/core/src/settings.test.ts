@@ -7,6 +7,7 @@ import {
   SETTINGS_VERSION,
   type Settings,
   hasAcceptedPrivacy,
+  linkTargetFor,
   settingsWithoutConsent,
   withDefaults,
 } from "./settings.js";
@@ -122,7 +123,7 @@ describe("settings stored before the track split", () => {
     const settings = withDefaults(legacy);
 
     expect(settings.activeTrack).toBe("neetcode");
-    expect(settings.problemLinkTarget).toBe("neetcode");
+    expect(settings.problemLinkTarget).toBe("track");
   });
 
   it("survives a round trip through itself", () => {
@@ -264,6 +265,47 @@ describe("the shared NeetCode sync cursor", () => {
     };
 
     expect(withDefaults(synced).providers.neetcode.lastFullSyncAt).toBe(1_787_000_000_000);
+  });
+});
+
+describe("where a problem opens", () => {
+  it("follows the track being reviewed", () => {
+    // The whole point of two tracks: a NeetCode review is a NeetCode problem, and a
+    // LeetCode review is a LeetCode one. One fixed site collapses that distinction.
+    expect(linkTargetFor("track", "neetcode")).toBe("neetcode");
+    expect(linkTargetFor("track", "leetcode")).toBe("leetcode");
+  });
+
+  it("honours a pinned site whatever the track", () => {
+    expect(linkTargetFor("leetcode", "neetcode")).toBe("leetcode");
+    expect(linkTargetFor("neetcode", "leetcode")).toBe("neetcode");
+  });
+});
+
+describe("the global NeetCode link target", () => {
+  /** An install from before `"track"` existed, when NeetCode was the default. */
+  const stored = (target: string, version: number) =>
+    ({ settingsVersion: version, problemLinkTarget: target }) as unknown as Partial<Settings>;
+
+  it("moves a stored NeetCode to following the track", () => {
+    // Indistinguishable from never having opened the setting, since that value *was* the
+    // default — so it carries no intent worth preserving over the better answer.
+    expect(withDefaults(stored("neetcode", 3)).problemLinkTarget).toBe("track");
+  });
+
+  it("leaves a stored LeetCode alone", () => {
+    // This one was never a default, so it can only have been chosen deliberately.
+    expect(withDefaults(stored("leetcode", 3)).problemLinkTarget).toBe("leetcode");
+  });
+
+  it("stops correcting once the version is stamped", () => {
+    // Otherwise picking "Always NeetCode" on the options page would be undone by the very
+    // next read, and the radio would spring back on its own.
+    const migrated = withDefaults(stored("neetcode", 3));
+    const chosen = { ...migrated, problemLinkTarget: "neetcode" } as Settings;
+
+    expect(chosen.settingsVersion).toBe(SETTINGS_VERSION);
+    expect(withDefaults(chosen).problemLinkTarget).toBe("neetcode");
   });
 });
 

@@ -42,10 +42,12 @@ first one.
 - Two independent tracks, LeetCode and NeetCode, each with its own schedule and pacing.
   Neither sets the pace for the other.
 - Side panel with the day's queue, a progress bar counted from the review log, and a look
-  at what's scheduled ahead.
+  at what's scheduled ahead. The toolbar icon opens it directly — there is no summary
+  popup in between, because the badge already carries the only number worth glancing at.
 - A browse tab listing every problem with its unlock countdown.
-- Problems open on NeetCode by default, where the video walkthrough is, falling back to
-  LeetCode for anything NeetCode doesn't host.
+- Problems open on the site whose track you're reviewing — the NeetCode track on NeetCode,
+  where the video walkthrough is, the LeetCode track on LeetCode. Anything NeetCode doesn't
+  host falls back to LeetCode. Settings can pin both tracks to one site instead.
 - A get-started page, opened once on install.
 - Sync failures are classified into something you can act on rather than reported as
   plumbing.
