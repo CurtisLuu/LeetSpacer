@@ -2,6 +2,29 @@
 
 What changed in each released version of LeetSpacer.
 
+## 1.0.1 — 23 August 2026
+
+Privacy policy unchanged: still revision 1, effective 18 August 2026. Nothing to
+re-accept.
+
+### Interface
+
+- The toolbar icon opens the side panel directly. The popup it used to open first carried a
+  due count and a solved count — both already on the badge and in the panel — above a
+  button that opened the panel. A click to earn a click.
+- Problems open on the site whose track you're reviewing: the NeetCode track on NeetCode,
+  where the video walkthrough is, the LeetCode track on LeetCode. Pinning both tracks to a
+  single site turned one of them into a list of links to the other. Either site is still
+  selectable as an override, and anything NeetCode doesn't host still falls back to
+  LeetCode.
+
+### Settings
+
+- Settings version 3 -> 4 rewrites a stored problem-link target of `neetcode` to `track`.
+  That value was the previous default, so it carries no more intent than never having
+  opened the setting; a stored `leetcode` could only have been chosen on purpose and is
+  left alone.
+
 ## 1.0.0 — 18 August 2026
 
 First public release.
@@ -42,12 +65,10 @@ first one.
 - Two independent tracks, LeetCode and NeetCode, each with its own schedule and pacing.
   Neither sets the pace for the other.
 - Side panel with the day's queue, a progress bar counted from the review log, and a look
-  at what's scheduled ahead. The toolbar icon opens it directly — there is no summary
-  popup in between, because the badge already carries the only number worth glancing at.
+  at what's scheduled ahead.
 - A browse tab listing every problem with its unlock countdown.
-- Problems open on the site whose track you're reviewing — the NeetCode track on NeetCode,
-  where the video walkthrough is, the LeetCode track on LeetCode. Anything NeetCode doesn't
-  host falls back to LeetCode. Settings can pin both tracks to one site instead.
+- Problems open on NeetCode by default, where the video walkthrough is, falling back to
+  LeetCode for anything NeetCode doesn't host.
 - A get-started page, opened once on install.
 - Sync failures are classified into something you can act on rather than reported as
   plumbing.

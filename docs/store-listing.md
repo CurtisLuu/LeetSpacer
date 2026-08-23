@@ -110,15 +110,17 @@ the listing shows only a version number and an "Updated" date; a visitor cannot 
 changed between two versions anywhere on the store. The convention is to paste a short
 block at the *top* of the detailed description above and rewrite it each release.
 
-Nothing to write for 1.0.0 — everything is new. From the second release on, put the
-headline items from that version's [`CHANGELOG.md`](../CHANGELOG.md) entry here, three or
-four lines at most, and move the previous one out:
+Paste the current block at the top of the detailed description above. Each release, put
+the headline items from that version's [`CHANGELOG.md`](../CHANGELOG.md) entry here, three
+or four lines at most, and move the previous one out. Nothing was written for 1.0.0 —
+everything was new.
 
 ```
-WHAT'S NEW IN 1.1
+WHAT'S NEW IN 1.0.1
 
-• <the change someone would notice>
-• <the next one>
+• The toolbar icon opens the review panel directly, instead of a summary popup first
+• Problems now open on the site whose track you're reviewing — NeetCode problems on
+  NeetCode, LeetCode problems on LeetCode. Settings can still pin both to one site.
 
 Full history: https://github.com/CurtisLuu/LeetSpacer/blob/main/CHANGELOG.md
 ```
@@ -220,8 +222,9 @@ sanity check to remember. One of those tests pins `PRIVACY.md` to its declared r
 if you edited the policy, the build stops with the exact entry to append to
 `PRIVACY_REVISIONS`. See **Changing the privacy policy** below.
 
-The artifact lands at `apps/extension/.output/leetspacer-1.0.0-chrome.zip`. Upload that
-file, not the unpacked folder.
+The artifact lands at `apps/extension/.output/leetspacer-<version>-chrome.zip` — the
+version is read from `apps/extension/package.json`, so the filename tells you which build
+you are holding. Upload that file, not the unpacked folder.
 
 Bump `version` in `apps/extension/package.json` for every resubmission — the store rejects
 a duplicate version number. The manifest has no version of its own; WXT reads that one, so
