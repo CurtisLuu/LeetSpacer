@@ -276,12 +276,11 @@ export function ReviewQueue({ track }: { track: TrackId }) {
           return (
             <Card as="li" key={item.slug} interactive className="group/row">
               <div className="flex min-w-0 items-start justify-between gap-2">
+                {/* Names the destination and stops there. When a NeetCode-track problem
+                    falls back, why it fell back is our business, not something to explain
+                    on every hover. */}
                 <Tooltip
-                  label={
-                    item.site === "neetcode"
-                      ? "Open on NeetCode"
-                      : "Open on LeetCode — NeetCode has no page for this one"
-                  }
+                  label={item.site === "neetcode" ? "Open on NeetCode" : "Open on LeetCode"}
                   align="start"
                 >
                   <a
