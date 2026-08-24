@@ -573,6 +573,13 @@ function RadioRow({
   );
 }
 
+/**
+ * A number box you can actually empty. The input holds the typed text rather than
+ * the saved number, so clearing it to type a fresh value leaves the box blank
+ * instead of snapping back to the old one. Anything in range saves as you type;
+ * whatever is left when you leave the box is clamped, and a blank box falls back
+ * to the saved value.
+ */
 function NumberField({
   label,
   value,
@@ -586,18 +593,39 @@ function NumberField({
   max: number;
   onChange: (value: number) => void;
 }) {
+  const [draft, setDraft] = useState(() => String(value));
+
+  // Follow the saved value when it changes from elsewhere — switching tracks,
+  // restoring a snapshot — but leave a draft that already says that number alone.
+  useEffect(() => {
+    setDraft((current) => (Number.parseInt(current, 10) === value ? current : String(value)));
+  }, [value]);
+
+  const settle = () => {
+    const typed = Number.parseInt(draft, 10);
+    const next = Number.isFinite(typed) ? Math.min(max, Math.max(min, typed)) : value;
+    setDraft(String(next));
+    if (next !== value) onChange(next);
+  };
+
   return (
     <label className="space-y-1">
       <span className="block text-xs text-ink-muted">{label}</span>
       <input
         type="number"
+        inputMode="numeric"
         className="w-full rounded-md border border-border bg-surface-raised px-2 py-1"
-        value={value}
+        value={draft}
         min={min}
         max={max}
         onChange={(e) => {
+          setDraft(e.target.value);
           const next = Number.parseInt(e.target.value, 10);
-          if (Number.isFinite(next)) onChange(Math.min(max, Math.max(min, next)));
+          if (Number.isFinite(next) && next >= min && next <= max) onChange(next);
+        }}
+        onBlur={settle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
         }}
       />
     </label>
