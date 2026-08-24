@@ -116,11 +116,12 @@ or four lines at most, and move the previous one out. Nothing was written for 1.
 everything was new.
 
 ```
-WHAT'S NEW IN 1.0.1
+WHAT'S NEW IN 1.0.2
 
-• The toolbar icon opens the review panel directly, instead of a summary popup first
-• Problems now open on the site whose track you're reviewing — NeetCode problems on
-  NeetCode, LeetCode problems on LeetCode. Settings can still pin both to one site.
+• Fixed number boxes in Settings that could not be cleared to type a new value
+• Each track now always opens its own site — NeetCode problems on NeetCode, LeetCode
+  problems on LeetCode. The setting that pinned both to one site is gone.
+• Refreshed the bundled problem catalogue
 
 Full history: https://github.com/CurtisLuu/LeetSpacer/blob/main/CHANGELOG.md
 ```
