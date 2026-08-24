@@ -1,5 +1,4 @@
 import {
-  type ProblemLinkTarget,
   type ProviderId,
   type ReviewCard,
   type Settings,
@@ -10,7 +9,6 @@ import {
   hasAcceptedPrivacy,
   ingestEvents,
   isStorageFull,
-  linkTargetFor,
   rebuildTrackSchedule,
   seedMissingCards,
   withMinimumLock,
@@ -289,7 +287,7 @@ export default defineBackground(() => {
         store.logs.since(midnight.getTime()),
       ]);
 
-      const items = await toReviewItems(selected, track, settings.problemLinkTarget, now);
+      const items = await toReviewItems(selected, track, now);
 
       return {
         items,
@@ -320,7 +318,7 @@ export default defineBackground(() => {
       // Soonest first, so the ones about to unlock are at the top where a countdown is
       // worth reading.
       const sorted = [...cards].sort((a, b) => a.due - b.due);
-      return { items: await toReviewItems(sorted, track, settings.problemLinkTarget, now), track };
+      return { items: await toReviewItems(sorted, track, now), track };
     },
 
     "catalog:neetcode-slugs": async () => ({
@@ -431,7 +429,6 @@ export default defineBackground(() => {
 async function toReviewItems(
   cards: readonly ReviewCard[],
   track: TrackId,
-  linkTarget: ProblemLinkTarget,
   now: number,
 ): Promise<ReviewItem[]> {
   const store = await getStore();
@@ -443,14 +440,12 @@ async function toReviewItems(
   // difficulty, and tags. Falls back gracefully for anything not in it.
   const [catalog, links] = await Promise.all([getCatalog().catch(() => null), getProblemLinks()]);
 
-  // Resolved once for the batch, not per card: every card here belongs to one track, so
-  // the answer cannot differ between them.
-  const prefer = linkTargetFor(linkTarget, track);
-
   return cards.map((card) => {
     const state = byslug.get(card.slug);
     const problem = catalog?.bySlug(card.slug);
-    const link = links.resolve(card.slug, prefer);
+    // A track opens its own site. Problems NeetCode has no page for still fall back
+    // to LeetCode — see `@lcs/catalog`'s problem-links.
+    const link = links.resolve(card.slug, track);
     return {
       slug: card.slug,
       title: problem?.title ?? titleFromSlug(card.slug),

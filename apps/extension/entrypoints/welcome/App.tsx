@@ -1,5 +1,5 @@
-import { type ProviderId, type TrackId } from "@lcs/core";
-import { type ReactNode, useState } from "react";
+import { type ProviderId } from "@lcs/core";
+import { type ReactNode } from "react";
 
 import {
   Badge,
@@ -9,13 +9,10 @@ import {
   CheckIcon,
   ExternalIcon,
   Logo,
-  TRACK_LABELS,
   Wordmark,
-  TrackSwitcher,
 } from "../../components/ui";
 import { cx } from "../../components/cx";
 import { useStatus } from "../../lib/use-status";
-import { useTrack } from "../../lib/use-track";
 
 /**
  * The page that opens once, on install.
@@ -39,21 +36,18 @@ const SOURCES: {
     id: "leetcode",
     name: "LeetCode",
     href: "https://leetcode.com/problemset/",
-    blurb:
-      "Everything you've solved, scheduled from when you actually solved it. The first sync takes a few minutes.",
+    blurb: "The first sync takes a few minutes.",
   },
   {
     id: "neetcode",
     name: "NeetCode",
     href: "https://neetcode.io/practice",
-    blurb:
-      "Everything you've completed, with real dates for the problems you solved here. The first sync takes a minute or two.",
+    blurb: "The first sync takes a minute or two.",
   },
 ];
 
 export function App() {
   const { status } = useStatus(2_000);
-  const { track, setTrack } = useTrack();
 
   const solvedFor = (provider: ProviderId) => status?.tracks?.[provider]?.solved ?? 0;
   const anySynced = SOURCES.some((source) => solvedFor(source.id) > 0);
@@ -122,29 +116,6 @@ export function App() {
 
         <Step
           n={2}
-          title="Pick where to start"
-          done={anySynced}
-          body="Both sites are supported and keep separate schedules. Switch tracks any time from the top of the side panel."
-        >
-          <TrackSwitcher value={track ?? "neetcode"} onChange={setTrack} disabled={track === null} />
-
-          <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
-            <TrackBlurb
-              track="leetcode"
-              active={track === "leetcode"}
-              body="Your whole history, usually the larger of the two."
-            />
-            <TrackBlurb
-              track="neetcode"
-              active={track === "neetcode"}
-              body="The NeetCode curriculum, paced separately from the above."
-            />
-          </dl>
-
-        </Step>
-
-        <Step
-          n={3}
           title="Review"
           body="Click the LeetSpacer icon in your toolbar whenever the badge shows a number. Open each problem, solve it, then come back and rate how it went — that rating is what decides when you see it again."
         >
@@ -223,27 +194,5 @@ function Step({
       <p className="mb-3 text-xs text-ink-muted">{body}</p>
       {children}
     </li>
-  );
-}
-
-function TrackBlurb({
-  track,
-  active,
-  body,
-}: {
-  track: TrackId;
-  active: boolean;
-  body: string;
-}) {
-  return (
-    <div
-      className={cx(
-        "rounded-lg border p-2.5",
-        active ? "border-accent/30 bg-accent-soft" : "border-border bg-surface",
-      )}
-    >
-      <dt className="font-medium text-ink">{TRACK_LABELS[track]}</dt>
-      <dd className="mt-0.5 text-ink-muted">{body}</dd>
-    </div>
   );
 }

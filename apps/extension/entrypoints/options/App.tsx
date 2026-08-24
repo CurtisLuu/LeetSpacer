@@ -273,35 +273,6 @@ export function App() {
       </Section>
 
       <Section
-        title="Where problems open"
-        description="Which site a problem in the review queue opens on when you click it."
-      >
-        <fieldset className="space-y-2 rounded-xl border border-border bg-surface-raised p-3">
-          <RadioRow
-            name="problemLinkTarget"
-            checked={settings.problemLinkTarget === "track"}
-            label="Match the track"
-            hint="The NeetCode track opens neetcode.io, the LeetCode track opens leetcode.com. Problems NeetCode doesn't host fall back to LeetCode."
-            onSelect={() => void patch({ problemLinkTarget: "track" })}
-          />
-          <RadioRow
-            name="problemLinkTarget"
-            checked={settings.problemLinkTarget === "neetcode"}
-            label="Always NeetCode"
-            hint="Both tracks open neetcode.io, where the video walkthrough and editorial are. Problems NeetCode doesn't host fall back to LeetCode."
-            onSelect={() => void patch({ problemLinkTarget: "neetcode" })}
-          />
-          <RadioRow
-            name="problemLinkTarget"
-            checked={settings.problemLinkTarget === "leetcode"}
-            label="Always LeetCode"
-            hint="Both tracks open leetcode.com, which has every problem."
-            onSelect={() => void patch({ problemLinkTarget: "leetcode" })}
-          />
-        </fieldset>
-      </Section>
-
-      <Section
         title="Practice tracks"
         description="Two independent schedules. Pick one here to adjust how it paces you — the other is untouched."
       >
@@ -441,12 +412,6 @@ export function App() {
 
       <Section title="Backup and restore">
         <div className="space-y-2 rounded-lg border border-border bg-surface-raised p-3">
-          <p className="text-xs text-ink-muted">
-            There's no server, so this is how your history moves between browsers or
-            survives a wiped profile. Importing merges — it never drops what you already
-            have, and review grades are kept.
-          </p>
-
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => void exportData()}>
               Export JSON
@@ -509,14 +474,6 @@ export function App() {
               key={id}
               className="space-y-2 rounded-xl border border-border bg-surface-raised p-3"
             >
-              <p className="text-xs text-ink-muted">
-                <span className="font-medium text-ink">Reset the {TRACK_LABELS[id]} track.</span>{" "}
-                Deletes what {TRACK_LABELS[id]} contributed — its problems, its review cards
-                and their grades — and nothing from{" "}
-                {TRACK_LABELS[other(id)]}. Your settings for it are kept. Open {HOSTS[id]}{" "}
-                afterwards and its history imports again from scratch.
-              </p>
-
               {confirming === id ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <Button variant="danger" onClick={() => void resetTrack(id)}>
@@ -616,6 +573,13 @@ function RadioRow({
   );
 }
 
+/**
+ * A number box you can actually empty. The input holds the typed text rather than
+ * the saved number, so clearing it to type a fresh value leaves the box blank
+ * instead of snapping back to the old one. Anything in range saves as you type;
+ * whatever is left when you leave the box is clamped, and a blank box falls back
+ * to the saved value.
+ */
 function NumberField({
   label,
   value,
@@ -629,18 +593,39 @@ function NumberField({
   max: number;
   onChange: (value: number) => void;
 }) {
+  const [draft, setDraft] = useState(() => String(value));
+
+  // Follow the saved value when it changes from elsewhere — switching tracks,
+  // restoring a snapshot — but leave a draft that already says that number alone.
+  useEffect(() => {
+    setDraft((current) => (Number.parseInt(current, 10) === value ? current : String(value)));
+  }, [value]);
+
+  const settle = () => {
+    const typed = Number.parseInt(draft, 10);
+    const next = Number.isFinite(typed) ? Math.min(max, Math.max(min, typed)) : value;
+    setDraft(String(next));
+    if (next !== value) onChange(next);
+  };
+
   return (
     <label className="space-y-1">
       <span className="block text-xs text-ink-muted">{label}</span>
       <input
         type="number"
+        inputMode="numeric"
         className="w-full rounded-md border border-border bg-surface-raised px-2 py-1"
-        value={value}
+        value={draft}
         min={min}
         max={max}
         onChange={(e) => {
+          setDraft(e.target.value);
           const next = Number.parseInt(e.target.value, 10);
-          if (Number.isFinite(next)) onChange(Math.min(max, Math.max(min, next)));
+          if (Number.isFinite(next) && next >= min && next <= max) onChange(next);
+        }}
+        onBlur={settle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
         }}
       />
     </label>

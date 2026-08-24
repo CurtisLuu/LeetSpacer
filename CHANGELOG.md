@@ -1,13 +1,39 @@
 # Changelog
 
 What changed in each released version of LeetSpacer.
+
 ## 1.0.2 — 24 August 2026
 
-### Interface
-Cleaned up wording around the UI.
+Privacy policy unchanged: still revision 1, effective 18 August 2026. Nothing to
+re-accept.
 
 ### Settings
-Fixed a bug with the settings when changing spaced repetition spacing settings and other settings involving a text box.
+
+- Fixed a bug with the settings when changing spaced repetition spacing settings and other
+  settings involving a text box. A number box was controlled by the saved number, so
+  clearing it put the old value straight back and you could only ever edit around what was
+  already there. It now holds what you type, clamps on the way out, and falls back to the
+  saved value if you leave it empty. Affects the two daily limits and the Easy/Medium/Hard
+  minimum lock.
+- The option to pin both tracks to one site is gone. A track opens its own site: the
+  NeetCode track on NeetCode, the LeetCode track on LeetCode. 1.0.1 made that the default
+  and kept the override; keeping it meant offering a setting whose only effect was to turn
+  one of the two tracks into a list of links to the other. Anything NeetCode doesn't host
+  still falls back to LeetCode. A stored preference is dropped on the next write, with
+  nothing to re-accept or re-choose.
+
+### Interface
+
+- Cleaned up wording around the UI: trimmed copy that repeated what the controls already
+  said — the track picker on the welcome page, whose choice the side panel switches any
+  time, and the paragraphs above the backup and per-track reset buttons. Both resets still
+  confirm before deleting.
+- The wordmark on the welcome page reads LeetSpacer rather than leetspacer.
+
+### Data
+
+- The bundled problem catalogue is refreshed to 4,033 problems, and the NeetCode slug map
+  re-derived against it.
 
 ## 1.0.1 — 23 August 2026
 

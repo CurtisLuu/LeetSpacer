@@ -46,15 +46,15 @@ const BRACE =
 /**
  * The wordmark, set two-tone the way the artwork does it.
  *
- * The original ghosts "leet" almost to white, which works on a poster and disappears in a
+ * The original ghosts "Leet" almost to white, which works on a poster and disappears in a
  * user interface — so it uses the muted ink token instead. Same idea, still legible, and
  * it survives dark mode, which a fixed near-white would not.
  */
 export function Wordmark({ className }: { className?: string }) {
   return (
     <span className={cx("font-semibold tracking-tight", className)}>
-      <span className="text-ink-subtle">leet</span>
-      <span className="text-accent">spacer</span>
+      <span className="text-ink-subtle">Leet</span>
+      <span className="text-accent">Spacer</span>
     </span>
   );
 }

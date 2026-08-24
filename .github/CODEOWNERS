@@ -1,0 +1,11 @@
+# Who has to approve a change before it lands.
+#
+# The `main` ruleset sets `require_code_owner_review`, which does nothing at all without
+# this file: with no paths owned, no review is ever demanded and any single approval
+# satisfies the gate. One line, one owner, so every path in the repository resolves here.
+#
+# Note that GitHub will not let an author approve their own pull request, so this cannot
+# be satisfied on a pull request opened by the owner named below — those merge through the
+# ruleset's bypass list instead.
+
+* @CurtisLuu

@@ -89,38 +89,6 @@ export interface Settings {
   privacyAcceptedVersion: number | null;
   /** Which track the UI is currently showing. Set by the selector in the side panel. */
   activeTrack: TrackId;
-  /**
-   * Which site a problem in the review queue opens on.
-   *
-   * `"track"` is the default, and the only value under which the two tracks stay
-   * distinct: reviewing the NeetCode track opens neetcode.io, reviewing the LeetCode
-   * track opens leetcode.com. A fixed site turns one of the tracks into a list of links
-   * to the other one.
-   *
-   * The two `ProviderId` values pin every link to that site whatever the track. Problems
-   * NeetCode has no page for still fall back to LeetCode — see `@lcs/catalog`'s
-   * problem-links.
-   */
-  problemLinkTarget: ProblemLinkTarget;
-}
-
-/**
- * Where a problem opens: one fixed site, or whichever site the track belongs to.
- *
- * `"track"` is a distinct value rather than an absent setting because "follow the track"
- * is a real, and better, answer than either site — not merely the state of having not
- * chosen yet.
- */
-export type ProblemLinkTarget = "track" | ProviderId;
-
-/**
- * The site a link actually points at, given the setting and the track being reviewed.
- *
- * Lives here rather than in the extension so the rule is stated once, next to the setting
- * it reads, and is testable without a browser.
- */
-export function linkTargetFor(target: ProblemLinkTarget, track: TrackId): ProviderId {
-  return target === "track" ? track : target;
 }
 
 /**
@@ -165,10 +133,10 @@ const LEETCODE_TRACK: TrackSettings = {
  * inherited a recent timestamp and only ever ran incrementally — fetching the last day and
  * declaring the history done. Clearing the cursor buys exactly one full walk.
  *
- * 3 -> 4: `problemLinkTarget` gained `"track"` and made it the default. A stored
- * `"neetcode"` is rewritten to it, because until now that was the default and choosing it
- * explicitly was indistinguishable from never opening the setting. A stored `"leetcode"`
- * is left alone — that one could only have been set on purpose.
+ * 3 -> 4: `problemLinkTarget` chose between a fixed site and the track's own. The
+ * setting is gone — a track now always opens its own site — so the migration went with
+ * it. `withDefaults` builds field by field, so a stored value is dropped on the next
+ * write without needing one.
  */
 export const SETTINGS_VERSION = 4;
 
@@ -293,7 +261,6 @@ export const DEFAULT_SETTINGS: Settings = {
   privacyAcceptedAt: null,
   privacyAcceptedVersion: null,
   activeTrack: "neetcode",
-  problemLinkTarget: "track",
 };
 
 /**
@@ -386,12 +353,7 @@ function migrateStored(stored: Partial<Settings>): Partial<Settings> {
     };
   }
 
-  // Was the default, so it carries no more intent than an untouched setting does. The
-  // other value did have to be chosen, and survives.
-  const problemLinkTarget =
-    version < 4 && stored.problemLinkTarget === "neetcode" ? "track" : stored.problemLinkTarget;
-
-  return { ...stored, providers, problemLinkTarget, settingsVersion: SETTINGS_VERSION };
+  return { ...stored, providers, settingsVersion: SETTINGS_VERSION };
 }
 
 /**
@@ -419,6 +381,5 @@ export function withDefaults(raw: Partial<Settings> | undefined): Settings {
     privacyAcceptedAt: stored?.privacyAcceptedAt ?? null,
     privacyAcceptedVersion: stored?.privacyAcceptedVersion ?? null,
     activeTrack: stored?.activeTrack ?? DEFAULT_SETTINGS.activeTrack,
-    problemLinkTarget: stored?.problemLinkTarget ?? DEFAULT_SETTINGS.problemLinkTarget,
   };
 }
