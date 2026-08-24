@@ -3,7 +3,7 @@
 A Chrome extension that reads your own LeetCode and NeetCode progress and tells you what
 to review today — spaced repetition scheduled from when you actually solved each problem.
 
-Everything stays on your device. There is no backend and no account.
+Everything stays on your device. 
 
 ---
 
