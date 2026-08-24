@@ -1,6 +1,9 @@
 # Changelog
 
 What changed in each released version of LeetSpacer.
+## 1.0.2 — 24 August 2026
+### Settings
+Fixed a bug with the settings when changing spaced repetition spacing settings and other settings involving a text box.
 
 ## 1.0.1 — 23 August 2026
 
