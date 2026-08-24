@@ -6,8 +6,6 @@ What changed in each released version of LeetSpacer.
 
 Privacy policy unchanged: still revision 1, effective 18 August 2026. Nothing to
 re-accept.
-### Interface
-Cleaned up wording around the UI.
 
 ### Settings
 
@@ -26,9 +24,11 @@ Cleaned up wording around the UI.
 
 ### Interface
 
-- Trimmed copy that repeated what the controls already said: the track picker on the
-  welcome page, whose choice the side panel switches any time, and the paragraphs above
-  the backup and per-track reset buttons. Both resets still confirm before deleting.
+- Cleaned up wording around the UI: trimmed copy that repeated what the controls already
+  said — the track picker on the welcome page, whose choice the side panel switches any
+  time, and the paragraphs above the backup and per-track reset buttons. Both resets still
+  confirm before deleting.
+- The wordmark on the welcome page reads LeetSpacer rather than leetspacer.
 
 ### Data
 
