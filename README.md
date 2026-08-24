@@ -11,11 +11,8 @@ Everything stays on your device. There is no backend and no account.
 
 ## Getting started
 
-1. Install the extension and accept the privacy policy. Nothing is read before you do —
-   including the collectors that watch each site's requests, which are not installed until
-   the answer arrives.
-2. Open **leetcode.com** or **neetcode.io** while signed in. That *is* the sync; there is
-   no sync button and nothing to configure.
+1. Install the extension at https://chromewebstore.google.com/detail/leetspacer/cloleogcoanmafocdppkocacljmcalah?authuser=1&hl=en 
+2. Open **leetcode.com** or **neetcode.io** while signed in. Your problems will sync from there.
 3. Click the LeetSpacer icon whenever the toolbar badge shows a number. Solve what's in
    the queue, then rate how it went — that rating decides when you see it again.
 
@@ -77,19 +74,6 @@ A problem you've done on both sites gets a card in **each** track, scheduled sep
 grading it in one leaves the other where it was. That's the point of the split, but it does
 mean working both tracks will show you some problems twice, on different days. If you only
 want one, just stay on that track; the other costs nothing but the sync.
-
-## Where problems open
-
-Clicking a problem in the review queue opens it **on the site whose track you're
-reviewing**: the NeetCode track opens neetcode.io, where the video walkthrough and
-editorial are, and the LeetCode track opens leetcode.com. There is no setting for this, and
-deliberately so — pinning both tracks to one site would turn the other track into a list of
-links to somewhere else.
-
-NeetCode serves most problems under its own renamed slugs — `two-sum` lives at
-`/problems/two-integer-sum` — so the extension ships a map between them. NeetCode has
-problem pages for 588 of LeetCode's 4,033 problems; anything it doesn't host falls back to
-LeetCode, and the tooltip says which site you're headed to.
 
 ## How the scheduling works
 
@@ -276,64 +260,6 @@ declined sync now reports *why* rather than returning a bare null, for the same 
 
 Note that the LeetCode adapter has never been through any of this. It works, but it was
 written the same way — from a reading of endpoints, with the environment assumed.
-
-## Terms and limitations
-
-Read on 17 August 2026. Not legal advice — recorded so the position is known rather than
-assumed, and so the next person doesn't have to rediscover it.
-
-### LeetCode
-
-Their [Terms](https://leetcode.com/terms/) prohibit automated access in broad language:
-
-> Activities such as "crawling," "scraping," or "spidering" any part of the Service … are
-> strictly forbidden.
-
-There is no exception for reading your own data. LeetSpacer walks `/api/submissions/`
-programmatically, which a broad reading covers. The argument against is that this is one
-user reading their own account from their own signed-in browser at roughly the rate a
-person browsing would generate — but the clause does not say that, so it is a grey area
-entered knowingly rather than a settled one.
-
-Two adjacent restrictions are satisfied deliberately, and should stay satisfied:
-
-- *"any process that operates while you are not logged into the platform"* — the sync only
-  runs inside a signed-in tab, never in the background worker.
-- *"placing an undue load on its infrastructure"* — every request goes through
-  `createThrottle` at roughly one per second with jitter, and the history walk is capped.
-
-Loosening either of those turns an arguable position into an indefensible one.
-
-### NeetCode
-
-Their [Terms](https://neetcode.io/terms) contain no anti-scraping or anti-automation
-clause, which makes the activity walk materially safer than its LeetCode counterpart. One
-clause does touch what is shipped here:
-
-> You shall not distribute, publish, transmit, modify, display or create derivative works
-> from material obtained with this service.
-
-`packages/catalog/data/neetcode-slugs.json` maps LeetCode slugs to NeetCode's, and is
-derived from their `sitemap.xml` — a file published for machines to read, with a
-`robots.txt` that disallows nothing — plus a 73-entry rename table taken from their app
-bundle. 514 of its 588 entries are identity mappings.
-
-Read plainly this is a contract term rather than a copyright one, and the distinction
-matters. The file is factual data with no creative selection or arrangement, which is thin
-ground for a copyright claim and therefore for any takedown mechanism that depends on one.
-The realistic remedy for a terms breach is that NeetCode asks, and the map is removed or
-swapped for LeetCode links. Worth knowing, not worth losing sleep over.
-
-Building the map inside the extension instead was considered and rejected on measurement:
-the rename table sits in chunk 84 of 152 content-hashed bundles, and the hashes change on
-every deploy, so there is nothing to cache. Finding it costs about 6 MB per run and up to
-13 MB if it moves. Doing that on every install would put orders of magnitude more load on
-NeetCode than shipping a 32 KB file — worse for them by the measure they would actually
-care about.
-
-Asking NeetCode is a five-minute email that settles it permanently, and the pitch is
-favourable: the map makes their site the default destination for every problem link in the
-extension.
 
 ## Licence
 
