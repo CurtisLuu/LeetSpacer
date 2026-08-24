@@ -412,12 +412,6 @@ export function App() {
 
       <Section title="Backup and restore">
         <div className="space-y-2 rounded-lg border border-border bg-surface-raised p-3">
-          <p className="text-xs text-ink-muted">
-            There's no server, so this is how your history moves between browsers or
-            survives a wiped profile. Importing merges — it never drops what you already
-            have, and review grades are kept.
-          </p>
-
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => void exportData()}>
               Export JSON
@@ -480,14 +474,6 @@ export function App() {
               key={id}
               className="space-y-2 rounded-xl border border-border bg-surface-raised p-3"
             >
-              <p className="text-xs text-ink-muted">
-                <span className="font-medium text-ink">Reset the {TRACK_LABELS[id]} track.</span>{" "}
-                Deletes what {TRACK_LABELS[id]} contributed — its problems, its review cards
-                and their grades — and nothing from{" "}
-                {TRACK_LABELS[other(id)]}. Your settings for it are kept. Open {HOSTS[id]}{" "}
-                afterwards and its history imports again from scratch.
-              </p>
-
               {confirming === id ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <Button variant="danger" onClick={() => void resetTrack(id)}>
