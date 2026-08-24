@@ -6,6 +6,8 @@ What changed in each released version of LeetSpacer.
 
 Privacy policy unchanged: still revision 1, effective 18 August 2026. Nothing to
 re-accept.
+### Interface
+Cleaned up wording around the UI.
 
 ### Settings
 
