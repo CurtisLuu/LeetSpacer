@@ -122,6 +122,21 @@ export function App() {
           <Button
             variant="primary"
             onClick={() => {
+              // Arc has no `chrome.sidePanel` to open — the toolbar click already falls
+              // back to a popup window there (see background.ts), and this button does
+              // the same rather than silently doing nothing.
+              if (!browser.sidePanel) {
+                void browser.windows
+                  .create({
+                    url: browser.runtime.getURL("/sidepanel.html"),
+                    type: "popup",
+                    width: 420,
+                    height: 640,
+                  })
+                  .catch(() => {});
+                return;
+              }
+
               // Needs a user gesture and a window id; both hold inside a click handler on
               // a real tab. If Chrome declines anyway the instruction above still stands.
               void browser.windows

@@ -122,9 +122,14 @@ export function ReviewQueue({ track }: { track: TrackId }) {
 
   const loadMore = useCallback(async () => {
     const step = Math.max(1, dailyLimit);
-    requested.current = (requested.current ?? dailyLimit) + step;
+    // Based on the batch's current size, not the last requested cap. Grading shrinks
+    // the batch without moving `requested.current` — cards leave it the moment they're
+    // rated, well before this is ever pressed — so adding `step` on top of a cap that
+    // no longer matches what's on screen pulled in everything the graded cards' old
+    // slots freed up, not just one more batch's worth.
+    requested.current = batch.length + step;
     await load(true, requested.current);
-  }, [load, dailyLimit]);
+  }, [load, dailyLimit, batch]);
 
   const grade = useCallback(
     async (slug: string, rating: ReviewRating) => {
