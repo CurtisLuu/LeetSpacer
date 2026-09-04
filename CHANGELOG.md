@@ -2,6 +2,25 @@
 
 What changed in each released version of LeetSpacer.
 
+## 1.0.3 — 3 September 2026
+
+Privacy policy unchanged: still revision 1, effective 18 August 2026. Nothing to
+re-accept.
+
+### Reviews
+
+- Fixed "Load more" pulling in far more than one batch's worth of cards. It sized the next
+  request off the last one plus a step, but grading shrinks the batch without moving that
+  number — so clearing several cards before pressing the button left the request far ahead
+  of what was actually on screen, and the extra room got filled with everything the graded
+  cards' old spots freed up. It's now sized off the batch you're actually looking at.
+
+### Compatibility
+
+- Works in Arc. Arc installs the extension from the Chrome Web Store like any other
+  Chromium browser, but has no working side panel to open — the toolbar icon now opens a
+  small popup window there instead of doing nothing.
+
 ## 1.0.2 — 24 August 2026
 
 Privacy policy unchanged: still revision 1, effective 18 August 2026. Nothing to

@@ -116,12 +116,10 @@ or four lines at most, and move the previous one out. Nothing was written for 1.
 everything was new.
 
 ```
-WHAT'S NEW IN 1.0.2
+WHAT'S NEW IN 1.0.3
 
-• Fixed number boxes in Settings that could not be cleared to type a new value
-• Each track now always opens its own site — NeetCode problems on NeetCode, LeetCode
-  problems on LeetCode. The setting that pinned both to one site is gone.
-• Refreshed the bundled problem catalogue
+• Works in Arc — the toolbar icon opens a small popup window there instead of doing nothing
+• Fixed "Load more" pulling in far more cards than one batch's worth
 
 Full history: https://github.com/CurtisLuu/LeetSpacer/blob/main/CHANGELOG.md
 ```
