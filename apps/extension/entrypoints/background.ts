@@ -132,10 +132,13 @@ export default defineBackground(() => {
     console.error("[lcs] side panel behavior", error);
   }
 
+  // A tab, not a `type: "popup"` window. Arc doesn't render popup-type windows as an
+  // attached panel either — it pops them out as a bare, disconnected window sitting
+  // outside Arc's own UI, which is worse than just landing in a normal tab.
   browser.action.onClicked.addListener(() => {
-    void browser.windows
-      .create({ url: browser.runtime.getURL("/sidepanel.html"), type: "popup", width: 420, height: 640 })
-      .catch((error: unknown) => console.error("[lcs] fallback panel window", error));
+    void browser.tabs
+      .create({ url: browser.runtime.getURL("/sidepanel.html") })
+      .catch((error: unknown) => console.error("[lcs] fallback panel tab", error));
   });
 
   // Open the walkthrough once, on install only.
