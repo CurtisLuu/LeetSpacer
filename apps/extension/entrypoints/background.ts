@@ -111,9 +111,23 @@ export default defineBackground(() => {
   // Chrome persists this setting, so a profile that installed an older build keeps the
   // popup's behaviour until this runs; calling it on every worker start rather than on
   // install is what makes the upgrade take effect.
-  void browser.sidePanel
-    .setPanelBehavior({ openPanelOnActionClick: true })
-    .catch((error: unknown) => console.error("[lcs] side panel behavior", error));
+  //
+  // Arc doesn't implement `chrome.sidePanel` at all — it's absent from `browser`, not just
+  // inert — so touching `.setPanelBehavior` there throws synchronously and would take this
+  // entire function, and every listener below it, down with it before they ever registered.
+  // Feature-detect first. Where the API is missing there's nothing for the toolbar click to
+  // open on its own, so open the same page as a small popup window instead.
+  if (browser.sidePanel) {
+    void browser.sidePanel
+      .setPanelBehavior({ openPanelOnActionClick: true })
+      .catch((error: unknown) => console.error("[lcs] side panel behavior", error));
+  } else {
+    browser.action.onClicked.addListener(() => {
+      void browser.windows
+        .create({ url: browser.runtime.getURL("/sidepanel.html"), type: "popup", width: 420, height: 640 })
+        .catch((error: unknown) => console.error("[lcs] fallback panel window", error));
+    });
+  }
 
   // Open the walkthrough once, on install only.
   //

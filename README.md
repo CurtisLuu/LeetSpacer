@@ -2,6 +2,9 @@
 
 A Chrome extension that reads your own LeetCode and NeetCode progress and tells you what
 to review today — spaced repetition scheduled from when you actually solved each problem.
+Also works in Arc, which installs it straight from the Chrome Web Store like any other
+Chromium browser; Arc has no side panel API, so the toolbar icon opens a small popup window
+there instead.
 
 Everything stays on your device. 
 
