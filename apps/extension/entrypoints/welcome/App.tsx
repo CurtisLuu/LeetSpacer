@@ -122,24 +122,21 @@ export function App() {
           <Button
             variant="primary"
             onClick={() => {
-              const openPopup = () =>
-                void browser.windows
-                  .create({
-                    url: browser.runtime.getURL("/sidepanel.html"),
-                    type: "popup",
-                    width: 420,
-                    height: 640,
-                  })
+              // A tab, not a `type: "popup"` window — Arc pops those out as a bare,
+              // disconnected window sitting outside its own UI, worse than a normal tab.
+              const openFallback = () =>
+                void browser.tabs
+                  .create({ url: browser.runtime.getURL("/sidepanel.html") })
                   .catch(() => {});
 
               // Whether `chrome.sidePanel` does anything can't be told in advance — Arc has
               // shipped both without it (touching it throws) and with a present stub that
               // never opens anything (see background.ts) — so any failure to get a real
-              // side panel open, sync or async, falls back to the same popup window the
-              // toolbar icon uses in that case.
+              // side panel open, sync or async, falls back to the same tab the toolbar icon
+              // uses in that case.
               try {
                 if (!browser.sidePanel) {
-                  openPopup();
+                  openFallback();
                   return;
                 }
 
@@ -153,9 +150,9 @@ export function App() {
                     }
                     return undefined;
                   })
-                  .catch(openPopup);
+                  .catch(openFallback);
               } catch {
-                openPopup();
+                openFallback();
               }
             }}
           >

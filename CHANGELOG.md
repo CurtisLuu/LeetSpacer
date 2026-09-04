@@ -18,8 +18,10 @@ re-accept.
 ### Compatibility
 
 - Works in Arc. Arc installs the extension from the Chrome Web Store like any other
-  Chromium browser, but has no working side panel to open — the toolbar icon now opens a
-  small popup window there instead of doing nothing.
+  Chromium browser, but has no working side panel to open — the toolbar icon now opens the
+  queue in a regular tab there instead of doing nothing. An earlier attempt at this used a
+  `type: "popup"` window, which Arc renders as a bare window sitting outside its own UI
+  rather than an attached panel; a plain tab is what actually behaves well there.
 
 ## 1.0.2 — 24 August 2026
 
