@@ -111,35 +111,9 @@ export default defineBackground(() => {
   // Chrome persists this setting, so a profile that installed an older build keeps the
   // popup's behaviour until this runs; calling it on every worker start rather than on
   // install is what makes the upgrade take effect.
-  //
-  // Whether `chrome.sidePanel` actually does anything can't be told in advance. Arc has
-  // shipped both without the API at all — touching it throws synchronously, which would
-  // take this whole function, and every listener below it, down with it before they ever
-  // registered — and, in other builds, with a present-but-inert stub that resolves
-  // `setPanelBehavior` normally without ever wiring the click to anything, since Arc has
-  // no side panel surface to open. A presence check alone only catches the first case.
-  //
-  // So the real API is asked for, best-effort, wherever it's callable at all, and the
-  // fallback listener below is registered unconditionally rather than gated on that check.
-  // That's safe on a browser where the real behaviour takes effect: Chrome's own contract
-  // for `openPanelOnActionClick` is that `action.onClicked` stops firing once it's engaged,
-  // so this listener is simply never called there — nothing doubles up.
-  try {
-    void browser.sidePanel
-      ?.setPanelBehavior({ openPanelOnActionClick: true })
-      ?.catch((error: unknown) => console.error("[lcs] side panel behavior", error));
-  } catch (error) {
-    console.error("[lcs] side panel behavior", error);
-  }
-
-  // A tab, not a `type: "popup"` window. Arc doesn't render popup-type windows as an
-  // attached panel either — it pops them out as a bare, disconnected window sitting
-  // outside Arc's own UI, which is worse than just landing in a normal tab.
-  browser.action.onClicked.addListener(() => {
-    void browser.tabs
-      .create({ url: browser.runtime.getURL("/sidepanel.html") })
-      .catch((error: unknown) => console.error("[lcs] fallback panel tab", error));
-  });
+  void browser.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((error: unknown) => console.error("[lcs] side panel behavior", error));
 
   // Open the walkthrough once, on install only.
   //

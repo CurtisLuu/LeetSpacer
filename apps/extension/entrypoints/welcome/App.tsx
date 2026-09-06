@@ -122,38 +122,17 @@ export function App() {
           <Button
             variant="primary"
             onClick={() => {
-              // A tab, not a `type: "popup"` window — Arc pops those out as a bare,
-              // disconnected window sitting outside its own UI, worse than a normal tab.
-              const openFallback = () =>
-                void browser.tabs
-                  .create({ url: browser.runtime.getURL("/sidepanel.html") })
-                  .catch(() => {});
-
-              // Whether `chrome.sidePanel` does anything can't be told in advance — Arc has
-              // shipped both without it (touching it throws) and with a present stub that
-              // never opens anything (see background.ts) — so any failure to get a real
-              // side panel open, sync or async, falls back to the same tab the toolbar icon
-              // uses in that case.
-              try {
-                if (!browser.sidePanel) {
-                  openFallback();
-                  return;
-                }
-
-                // Needs a user gesture and a window id; both hold inside a click handler on
-                // a real tab.
-                void browser.windows
-                  .getCurrent()
-                  .then((current) => {
-                    if (current.id !== undefined) {
-                      return browser.sidePanel.open({ windowId: current.id });
-                    }
-                    return undefined;
-                  })
-                  .catch(openFallback);
-              } catch {
-                openFallback();
-              }
+              // Needs a user gesture and a window id; both hold inside a click handler on
+              // a real tab. If Chrome declines anyway the instruction above still stands.
+              void browser.windows
+                .getCurrent()
+                .then((current) => {
+                  if (current.id !== undefined) {
+                    return browser.sidePanel.open({ windowId: current.id });
+                  }
+                  return undefined;
+                })
+                .catch(() => {});
             }}
           >
             Open the side panel
