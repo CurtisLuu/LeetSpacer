@@ -118,7 +118,6 @@ everything was new.
 ```
 WHAT'S NEW IN 1.0.3
 
-• Works in Arc — the toolbar icon opens the queue in a regular tab there instead of doing nothing
 • Fixed "Load more" pulling in far more cards than one batch's worth
 
 Full history: https://github.com/CurtisLuu/LeetSpacer/blob/main/CHANGELOG.md
